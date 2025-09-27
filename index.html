@@ -12,7 +12,206 @@
     .ok { color: #065f46; }
     .warn { color: #92400e; }
     .err { color: #991b1b; }
-    label { display: block; font-size: 14px; margin: 12px 0 6px; }
+    label { display: block; font-size: 14px; margin: 12px 0 6px; }<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>On-Site Check-In</title>
+<style>
+  :root { --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#64748b; --ok:#065f46; --warn:#92400e; --err:#991b1b; --line:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  .wrap { max-width:760px; margin:48px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,.06); padding:20px; }
+  h1 { margin:0 0 8px; font-size:22px; }
+  .badge { display:inline-block; margin-left:8px; font-size:12px; padding:4px 10px; border-radius:999px; background:#eef2ff; }
+  .muted { color:var(--muted); }
+  .ok { color:var(--ok); }
+  .warn { color:var(--warn); }
+  .err { color:var(--err); }
+  label { display:block; font-size:13px; margin:10px 0 6px; color:#334155; }
+  input, textarea, select, button {
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:16px; background:#fff;
+  }
+  button { cursor:pointer; }
+  button[disabled] { opacity:.6; cursor:not-allowed; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .section { margin-top:16px; padding-top:16px; border-top:1px dashed var(--line); }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  .chip { padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:12px; cursor:pointer; background:#fff; }
+  .flex { display:flex; gap:10px; align-items:center; }
+  .right { margin-left:auto; }
+  .hidden { display:none; }
+  small.code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; color:#475569; background:#f1f5f9; padding:2px 6px; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="flex">
+      <h1>On-Site Check-In <span id="siteBadge" class="badge"></span></h1>
+      <button id="refreshBtn" class="right" title="Refresh location">Refresh</button>
+    </div>
+    <p id="status" class="muted">Requesting location…</p>
+
+    <div id="metrics" class="chips hidden">
+      <span><small class="code">distance:</small> <span id="dist">–</span> m</span>
+      <span><small class="code">accuracy:</small> ±<span id="acc">–</span> m</span>
+      <span><small class="code">radius:</small> <span id="rad">–</span> m</span>
+    </div>
+
+    <form id="form" class="section hidden" autocomplete="off">
+      <div class="row">
+        <div>
+          <label for="employeeId">Employee ID</label>
+          <input id="employeeId" required placeholder="e.g., OG1234" />
+        </div>
+        <div>
+          <label for="name">Name</label>
+          <input id="name" required placeholder="Full name" />
+        </div>
+      </div>
+      <label for="note">Note (optional)</label>
+      <textarea id="note" rows="2" placeholder="Gate A / Toolbox / etc."></textarea>
+      <button id="submitBtn" type="submit" disabled>Check In</button>
+      <div id="result" class="section hidden"></div>
+    </form>
+
+    <!-- Configurator (for choosing center & radius; not persisted) -->
+    <div class="section">
+      <div class="flex">
+        <strong>Configurator</strong>
+        <small class="muted right">Use this to decide your center & radius, then copy to CONFIG.</small>
+      </div>
+      <div class="row-3">
+        <div>
+          <label for="cfgSite">Site name</label>
+          <input id="cfgSite" />
+        </div>
+        <div>
+          <label for="cfgLat">Center lat</label>
+          <input id="cfgLat" type="number" step="0.000001" />
+        </div>
+        <div>
+          <label for="cfgLng">Center lng</label>
+          <input id="cfgLng" type="number" step="0.000001" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="cfgRadius">Radius (m)</label>
+          <input id="cfgRadius" type="number" step="10" />
+        </div>
+        <div style="align-self:end;">
+          <button id="applyCfgBtn" type="button">Apply</button>
+        </div>
+      </div>
+      <div class="chips">
+        <span class="chip" data-r="100">100 m</span>
+        <span class="chip" data-r="150">150 m</span>
+        <span class="chip" data-r="200">200 m</span>
+        <span class="chip" data-r="250">250 m</span>
+        <span class="chip" data-r="300">300 m</span>
+      </div>
+      <div class="chips">
+        <button id="useHereBtn" type="button">Use my current location as center</button>
+        <button id="copyCfgBtn" type="button">Copy CONFIG to clipboard</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== FINAL CONFIG (set these once you decide) =====
+  const CONFIG = {
+    siteName: 'Labuan Yard',
+    siteLat: 5.283000,
+    siteLng: 115.230000,
+    radiusM: 150,
+    // endpoint + secret are for when you connect the Google Apps Script backend
+    endpoint: '', // e.g., https://script.google.com/macros/s/AKfycb.../exec
+    secret: ''
+  };
+
+  // ===== Runtime (can be changed by Configurator) =====
+  let runtime = { ...CONFIG };
+
+  // ===== Helpers =====
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#status'), formEl = $('#form'), submitBtn = $('#submitBtn'), resultEl = $('#result');
+  const distEl = $('#dist'), accEl = $('#acc'), radEl = $('#rad'), metrics = $('#metrics');
+  $('#siteBadge').textContent = runtime.siteName;
+
+  function haversineM(lat1, lon1, lat2, lon2) {
+    const R = 6371000, toRad = d => d * Math.PI/180;
+    const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  function setStatus({within, distance, accuracy, msgClass, msg}) {
+    statusEl.className = msgClass;
+    statusEl.textContent = msg;
+    metrics.classList.remove('hidden');
+    distEl.textContent = isFinite(distance) ? Math.round(distance) : '–';
+    accEl.textContent  = isFinite(accuracy) ? Math.round(accuracy) : '–';
+    radEl.textContent  = runtime.radiusM;
+    $('#siteBadge').textContent = runtime.siteName;
+    submitBtn.disabled = !within;
+    formEl.classList.toggle('hidden', !within);
+  }
+
+  let lastFix = null;
+
+  async function getFix() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('Geolocation not supported.'));
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve(pos),
+        err => reject(err),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+  }
+
+  async function refresh() {
+    try {
+      statusEl.className = 'muted';
+      statusEl.textContent = 'Requesting location…';
+      const p = await getFix();
+      const { latitude, longitude, accuracy } = p.coords;
+      lastFix = { lat: latitude, lng: longitude, accuracy };
+      const d = haversineM(latitude, longitude, runtime.siteLat, runtime.siteLng);
+      const within = d <= runtime.radiusM;
+      setStatus({
+        within,
+        distance: d,
+        accuracy,
+        msgClass: within ? 'ok' : 'warn',
+        msg: within
+          ? `On site ✓ (≈${Math.round(d)} m from center, accuracy ±${Math.round(accuracy)} m)`
+          : `Outside geofence (≈${Math.round(d)} m away). Move closer and refresh.`
+      });
+    } catch (e) {
+      setStatus({ within:false, distance:NaN, accuracy:NaN, msgClass:'err', msg:`Location error: ${e.message}` });
+    }
+  }
+
+  // Init
+  refresh();
+  $('#refreshBtn').addEventListener('click', refresh);
+
+  // Submit (wire this up once endpoint/secret set)
+  formEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!CONFIG.endpoint) {
+      resultEl.className = 'warn';
+      resultEl.textContent = 'No backend connected yet. Add your Apps Script endpoint to CONFIG.';
+      resultEl.classList.remove('hidden');
+      re
+
     input, select, button, textarea {
       width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 10px; font-size: 16px;
     }
