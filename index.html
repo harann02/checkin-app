@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>On-Site Check-In</title>
+<title>On-Site Check • Multi-Site + Check-Out</title>
 <style>
   :root{
-    --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e5e7eb;
+    --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#64748b; --line:#e5e7eb;
     --ok:#065f46; --warn:#92400e; --err:#991b1b;
-    --primary:#0ea5e9; --primary-weak:#dbeafe; --primary-text:#ffffff; --disabled:#94a3b8;
+    --primary:#0ea5e9; --primary-weak:#dbeafe; --primary-text:#fff; --disabled:#94a3b8;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -17,21 +17,33 @@
   h1{margin:0 0 8px;font-size:22px}
   .muted{color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
   label{display:block;font-size:13px;margin:12px 0 6px;color:#334155}
-  input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff}
+  input,select{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .section{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}
   .small{font-size:13px}
-  button{
-    width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--primary);
-    background:var(--primary);color:var(--primary-text);font-size:16px;cursor:pointer
-  }
-  button[disabled]{background:var(--primary-weak);border-color:var(--primary-weak);color:var(--disabled);cursor:not-allowed}
+  .btn{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--primary);
+       background:var(--primary);color:var(--primary-text);font-size:16px;cursor:pointer}
+  .btn[disabled]{background:var(--primary-weak);border-color:var(--primary-weak);color:var(--disabled);cursor:not-allowed}
+  .btn.secondary{background:#16a34a;border-color:#16a34a}
+  .btn.secondary[disabled]{background:#dcfce7;border-color:#dcfce7;color:#86efac}
+  .btnrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>On-Site Check-In</h1>
+    <h1>On-Site Check</h1>
+
+    <div class="row">
+      <div>
+        <label for="site">Site</label>
+        <select id="site"></select>
+      </div>
+      <div>
+        <label for="radius">Radius (m)</label>
+        <input id="radius" type="number" value="2000" />
+      </div>
+    </div>
 
     <p id="status" class="muted">Requesting location…</p>
     <p id="meta" class="small muted"></p>
@@ -47,68 +59,90 @@
           <input id="name" required placeholder="Full name" />
         </div>
       </div>
-      <div style="margin-top:12px">
-        <button id="checkinBtn" type="submit" disabled>Check In</button>
+
+      <div class="btnrow" style="margin-top:12px">
+        <button id="btnIn"  class="btn"         type="button" disabled>Check In</button>
+        <button id="btnOut" class="btn secondary" type="button" disabled>Check Out</button>
       </div>
+
       <p id="result" class="small"></p>
     </form>
 
     <p id="help" class="small muted section" style="display:none">
-      If you don’t see a location prompt, allow Location for this site in your browser
-      (🔒 → Site settings → Location → Allow) and reload. Check-ins are limited to phones with GPS.
+      If you don’t see a location prompt, allow Location for this site
+      (🔒 → Site settings → Location → Allow) and reload. Phones with GPS only.
     </p>
   </div>
 </div>
 
 <script>
-  // ==== SETTINGS (edit only if you change office/endpoint) ===================
-  const SITE_NAME = 'Labuan Office';
-  const SITE_LAT  = 5.284357953275637;
-  const SITE_LNG  = 115.23158301414999;
-  const RADIUS_M  = 2000;            // 2 km geofence
-  const MIN_ACCURACY_M = 200;        // require ±200 m or better
-  const REQUIRE_MOBILE  = true;      // only allow phones to check in
+  // ========= SETTINGS (edit ENDPOINT; add more sites if you like) =========
+  const SITES = {
+    'Labuan Office': { lat: 5.284357953275637, lng: 115.23158301414999 },
+    // 'SAMUR Plant':    { lat: 5.123456, lng: 115.123456 },
+    // 'Offshore F23':   { lat: 4.987654, lng: 114.567890 },
+  };
+  const MIN_ACCURACY_M = 200;
+  const REQUIRE_MOBILE = true;
 
-  // Your Google Apps Script web app (must be the /exec URL) + matching SECRET
-  const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzHRrh0tuUwM8mgjQJSFdCYTf85swvf9zNendZyRnUb10p2xk73X4Rv1Z6II4G_NGcDuw/exec?v=B8';
+  // IMPORTANT: use your new B8-bound /exec URL (add ?v=B8 to bust cache)
+  const ENDPOINT = 'PASTE_YOUR_/exec_URL_HERE?v=B8';
   const SECRET   = 'Labu@n-2025-!';
-  // ==========================================================================
 
+  // ========= RUNTIME =========
   const $ = s => document.querySelector(s);
+  const siteSel = $('#site'), radiusEl = $('#radius');
   const statusEl = $('#status'), metaEl = $('#meta'), helpEl = $('#help');
-  const formEl = $('#form'), btn = $('#checkinBtn'), resultEl = $('#result');
   const idEl = $('#employeeId'), nameEl = $('#name');
+  const btnIn = $('#btnIn'), btnOut = $('#btnOut'), resultEl = $('#result');
 
-  // distance helper
+  function isMobileUA(){ return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||''); }
+  function haversineM(lat1, lon1, lat2, lon2){
+    const R=6371000, toRad=d=>d*Math.PI/180;
+    const dLat=toRad(lat2-lat1), dLon=toRad(lat2-lon1);
+  }
+  // fix a typo in lon
   function haversineM(lat1, lon1, lat2, lon2){
     const R=6371000, toRad=d=>d*Math.PI/180;
     const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
     const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
     return 2*R*Math.asin(Math.sqrt(a));
   }
-  const isMobileUA = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
 
-  let lastFix = null;
-  let withinOK = false;
+  // populate site dropdown + support ?site=… in URL
+  (function initSites(){
+    const params = new URLSearchParams(location.search);
+    const pre = params.get('site');
+    Object.keys(SITES).forEach(name=>{
+      const opt=document.createElement('option');
+      opt.value=name; opt.textContent=name;
+      siteSel.appendChild(opt);
+    });
+    if(pre && SITES[pre]) siteSel.value = pre;
+  })();
 
-  function updateButtonState(){
-    const idOk = idEl.value.trim().length>0;
-    const nameOk = nameEl.value.trim().length>0;
-    btn.disabled = !(withinOK && idOk && nameOk);
-  }
-  idEl.addEventListener('input', updateButtonState);
-  nameEl.addEventListener('input', updateButtonState);
-
+  let lastFix=null, withinOK=false;
   function getFix(){
-    return new Promise((resolve, reject)=>{
-      if(!navigator.geolocation) return reject(new Error('Geolocation not supported.'));
+    return new Promise((res, rej)=>{
+      if(!navigator.geolocation) return rej(new Error('Geolocation not supported.'));
       navigator.geolocation.getCurrentPosition(
-        pos => resolve(pos),
-        err => reject(err),
+        pos=>res(pos),
+        err=>rej(err),
         { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
       );
     });
   }
+  function updateButtons(){
+    const idOk = idEl.value.trim().length>0;
+    const nmOk = nameEl.value.trim().length>0;
+    const ready = withinOK && idOk && nmOk;
+    btnIn.disabled = !ready;
+    btnOut.disabled = !ready; // require on-site for checkout as well; change if you want off-site checkout
+  }
+  idEl.addEventListener('input', updateButtons);
+  nameEl.addEventListener('input', updateButtons);
+  siteSel.addEventListener('change', ()=>init()); // re-check geofence if site changed
+  radiusEl.addEventListener('input', ()=>init());
 
   async function init(){
     try{
@@ -119,87 +153,79 @@
       const { latitude, longitude, accuracy } = pos.coords;
       lastFix = { lat: latitude, lng: longitude, accuracy };
 
-      const distance = haversineM(latitude, longitude, SITE_LAT, SITE_LNG);
-      const effective = Math.max(0, distance - accuracy);
-      let within = (effective <= RADIUS_M) && (accuracy <= MIN_ACCURACY_M);
-      if (REQUIRE_MOBILE && !isMobileUA()) within = false;
+      const site = SITES[siteSel.value];
+      const r = Math.max(50, Number(radiusEl.value)||2000);
+      const d = haversineM(latitude, longitude, site.lat, site.lng);
+      const eff = Math.max(0, d - accuracy);
+
+      let within = (eff <= r) && (accuracy <= MIN_ACCURACY_M);
+      if(REQUIRE_MOBILE && !isMobileUA()) within = false;
 
       metaEl.textContent =
-        `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(distance)} m from center `
-        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effective)} m).`;
+        `${siteSel.value} • radius ${r} m • you are ~${Math.round(d)} m from center `
+        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(eff)} m).`;
 
+      withinOK = within;
       if(within){
-        statusEl.className='ok';
-        statusEl.textContent='On site ✓';
-        withinOK = true;
+        statusEl.className='ok'; statusEl.textContent='On site ✓';
       }else{
         statusEl.className='warn';
         const reasons=[];
         if(accuracy>MIN_ACCURACY_M) reasons.push(`accuracy too poor (±${Math.round(accuracy)} m > ${MIN_ACCURACY_M} m)`);
-        if(effective>RADIUS_M) reasons.push(`outside geofence (~${Math.round(effective)} m > ${RADIUS_M} m)`);
+        if(eff>r) reasons.push(`outside geofence (~${Math.round(eff)} m > ${r} m)`);
         if(REQUIRE_MOBILE && !isMobileUA()) reasons.push('mobile device required');
-        statusEl.textContent = `Cannot check in: ${reasons.join('; ')}. Move closer and use your phone outdoors.`;
-        withinOK = false;
+        statusEl.textContent='Cannot proceed: '+reasons.join('; ');
       }
-      updateButtonState();
+      updateButtons();
     }catch(e){
       statusEl.className='err';
       statusEl.textContent = e.message.includes('denied')
         ? 'Location permission denied. Allow it in site settings and reload.'
         : 'Could not get your location. Step outside or enable GPS, then reload.';
       helpEl.style.display='block';
-      withinOK = false;
-      updateButtonState();
+      withinOK=false; updateButtons();
     }
   }
   document.addEventListener('DOMContentLoaded', init);
 
-  // SUBMIT (Safari-friendly: send as plain text, NO JSON header)
-  formEl.addEventListener('submit', async (ev)=>{
-    ev.preventDefault();
-    updateButtonState();
-    if(btn.disabled) return;
-
-    btn.disabled = true;
+  async function submitAction(action){
+    if(btnIn.disabled && btnOut.disabled) return;
+    const payload = {
+      secret: SECRET,
+      action,                        // 'checkin' or 'checkout'
+      employeeId: idEl.value.trim(),
+      name: nameEl.value.trim(),
+      siteName: siteSel.value,
+      lat: lastFix?.lat, lng: lastFix?.lng, accuracy: lastFix?.accuracy,
+      radiusM: Number(radiusEl.value)||2000,
+      userAgent: navigator.userAgent, note: ''
+    };
     resultEl.className='small muted';
     resultEl.textContent='Submitting…';
 
-    if(!ENDPOINT){
-      resultEl.textContent='Checked in locally (no backend configured).';
-      formEl.reset(); updateButtonState(); btn.disabled=false; return;
-    }
-
-    const payload = {
-      secret: SECRET,
-      employeeId: idEl.value.trim(),
-      name: nameEl.value.trim(),
-      siteName: SITE_NAME,
-      lat: lastFix?.lat, lng: lastFix?.lng, accuracy: lastFix?.accuracy,
-      radiusM: RADIUS_M, userAgent: navigator.userAgent, note: ''
-    };
-
     try{
-      // IMPORTANT: no headers → iOS Safari skips the preflight that causes “Load failed”
-      const r = await fetch(ENDPOINT, {
-        method:'POST',
-        body: JSON.stringify(payload)
-      });
+      const r = await fetch(ENDPOINT, { method:'POST', body: JSON.stringify(payload) });
       const json = await r.json().catch(()=> ({}));
       if(json && json.ok){
         resultEl.className='small ok';
-        resultEl.textContent = `Checked in at ${new Date().toLocaleString()} (server distance≈${json.distanceM ?? 'n/a'} m).`;
-        formEl.reset();
+        if(action==='checkin'){
+          resultEl.textContent = `Checked IN at ${new Date().toLocaleString()}.`;
+        } else {
+          resultEl.textContent = `Checked OUT at ${new Date().toLocaleString()} (duration≈${json.durationMin ?? 'n/a'} min).`;
+        }
+        // optional: clear fields after success
+        // idEl.value=''; nameEl.value=''; updateButtons();
       }else{
         resultEl.className='small err';
-        resultEl.textContent = `Check-in failed: ${json.error || 'unknown_error'}`;
+        resultEl.textContent = `Failed: ${json.error || 'unknown_error'}`;
       }
     }catch(err){
       resultEl.className='small err';
       resultEl.textContent = `Network error: ${String(err)}`;
-    }finally{
-      updateButtonState();
     }
-  });
+  }
+  btnIn.addEventListener('click', ()=> submitAction('checkin'));
+  btnOut.addEventListener('click',()=> submitAction('checkout'));
 </script>
 </body>
 </html>
