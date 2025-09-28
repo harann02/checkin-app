@@ -8,42 +8,26 @@
   :root { --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#64748b; --ok:#065f46; --warn:#92400e; --err:#991b1b; --line:#e5e7eb; }
   * { box-sizing:border-box }
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif }
-  .wrap { max-width:760px; margin:48px auto; padding:0 16px }
+  .wrap { max-width:560px; margin:48px auto; padding:0 16px }
   .card { background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,.06); padding:20px }
   h1 { margin:0 0 8px; font-size:22px }
-  .badge { display:inline-block; margin-left:8px; font-size:12px; padding:4px 10px; border-radius:999px; background:#eef2ff }
   .muted{color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
   label{display:block;font-size:13px;margin:10px 0 6px;color:#334155}
-  input,textarea,button{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff}
+  input,button{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff}
   button{cursor:pointer} button[disabled]{opacity:.6;cursor:not-allowed}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
   .section{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}
-  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-  .chip{padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:pointer;background:#fff}
-  .flex{display:flex;gap:10px;align-items:center}
-  .right{margin-left:auto}
-  .hidden{display:none}
-  small.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#475569;background:#f1f5f9;padding:2px 6px;border-radius:6px}
+  .small{font-size:13px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <div class="flex">
-      <h1>On-Site Check-In <span id="siteBadge" class="badge"></span></h1>
-      <button id="enableBtn" class="right" title="Enable / Refresh location">Enable location</button>
-    </div>
-
+    <h1>On-Site Check-In</h1>
     <p id="status" class="muted">Requesting location…</p>
-    <div id="metrics" class="chips hidden">
-      <span><small class="code">distance:</small> <span id="dist">–</span> m</span>
-      <span><small class="code">accuracy:</small> ±<span id="acc">–</span> m</span>
-      <span><small class="code">radius:</small> <span id="rad">–</span> m</span>
-      <span><small class="code">perm:</small> <span id="perm">unknown</span></span>
-    </div>
+    <p id="meta" class="small muted"></p>
 
-    <form id="form" class="section hidden" autocomplete="off">
+    <form id="form" class="section" autocomplete="off">
       <div class="row">
         <div>
           <label for="employeeId">Employee ID</label>
@@ -54,74 +38,102 @@
           <input id="name" required placeholder="Full name" />
         </div>
       </div>
-      <label for="note">Note (optional)</label>
-      <textarea id="note" rows="2" placeholder="Gate A / Toolbox / etc."></textarea>
-      <button id="submitBtn" type="submit" disabled>Check In</button>
-      <div id="result" class="section hidden"></div>
+      <button id="checkinBtn" type="submit" disabled>Check In</button>
+      <p id="result" class="small"></p>
     </form>
 
-    <!-- Configurator (temporary; helps you choose center/radius) -->
-    <div class="section">
-      <div class="flex">
-        <strong>Configurator</strong>
-        <small class="muted right">Use this to decide center & radius, then copy to CONFIG.</small>
-      </div>
-      <div class="row-3">
-        <div><label for="cfgSite">Site name</label><input id="cfgSite" /></div>
-        <div><label for="cfgLat">Center lat</label><input id="cfgLat" type="number" step="0.000001" /></div>
-        <div><label for="cfgLng">Center lng</label><input id="cfgLng" type="number" step="0.000001" /></div>
-      </div>
-      <div class="row">
-        <div><label for="cfgRadius">Radius (m)</label><input id="cfgRadius" type="number" step="10" /></div>
-        <div style="align-self:end;"><button id="applyCfgBtn" type="button">Apply</button></div>
-      </div>
-      <div class="chips">
-        <span class="chip" data-r="100">100 m</span><span class="chip" data-r="150">150 m</span>
-        <span class="chip" data-r="200">200 m</span><span class="chip" data-r="250">250 m</span>
-        <span class="chip" data-r="300">300 m</span>
-      </div>
-      <div class="chips">
-        <button id="useHereBtn" type="button">Use my current location as center</button>
-        <button id="copyCfgBtn" type="button">Copy CONFIG to clipboard</button>
-      </div>
-    </div>
-
-    <div id="help" class="section muted hidden">
-      <strong>Troubleshooting:</strong>
-      If no prompt appears, tap <em>Enable location</em>. In the browser address bar, set <em>Location → Allow</em>, then reload.
-    </div>
+    <p id="help" class="small muted section">If you don’t see a location prompt, allow Location for this site in your browser (🔒 → Site settings → Location → Allow) and reload.</p>
   </div>
 </div>
 
 <script>
-  // ===== FINAL CONFIG (set these once you decide) =====
-  const CONFIG = {
-    siteName: 'Labuan Office',     // <- edit
-    siteLat:  5.283000,            // <- edit
-    siteLng:  115.230000,          // <- edit
-    radiusM:  20000,                 // <- edit
-    endpoint: '',                  // Google Apps Script URL (add later)
-    secret:   ''                   // same SECRET as backend (add later)
-  };
+  // ====== EDIT THESE 3 LINES ONLY ======
+  const SITE_NAME = 'Labuan Office';     // your site label
+  const SITE_LAT  = 5.283000;            // <-- replace with your Labuan Office latitude
+  const SITE_LNG  = 115.230000;          // <-- replace with your Labuan Office longitude
+  const RADIUS_M  = 2000;                // 2 km radius
+  // Optional backend (Google Apps Script). Leave blank until you wire it.
+  const ENDPOINT  = '';                  // e.g. https://script.google.com/macros/s/AKfycb.../exec
+  const SECRET    = '';                  // must match your Apps Script SECRET
 
-  // ===== Runtime (Configurator can change these temporarily) =====
-  let runtime = { ...CONFIG };
-
-  // ===== DOM bindings =====
+  // ====== No edits needed below ======
   const $ = s => document.querySelector(s);
-  const statusEl = $('#status'), formEl = $('#form'), resultEl = $('#result');
-  const enableBtn = $('#enableBtn'), submitBtn = $('#submitBtn');
-  const distEl = $('#dist'), accEl = $('#acc'), radEl = $('#rad'), permEl = $('#perm'), metrics = $('#metrics');
-  $('#siteBadge').textContent = runtime.siteName;
+  const statusEl = $('#status'), metaEl = $('#meta'), helpEl = $('#help');
+  const formEl = $('#form'), btn = $('#checkinBtn'), resultEl = $('#result');
 
-  // ===== Helpers =====
   function haversineM(lat1, lon1, lat2, lon2) {
     const R=6371000, toRad=d=>d*Math.PI/180;
     const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
     const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
     return 2*R*Math.asin(Math.sqrt(a));
   }
-  function setStatus({within, distance, accuracy, cls, msg}) {
-    statusEl.className = cls;
-    statusEl.textContent = msg;
-    metrics.classList.r
+
+  let lastFix = null;
+
+  function getFix() {
+    return new Promise((res, rej) => {
+      if (!navigator.geolocation) return rej(new Error('Geolocation not supported by this browser.'));
+      navigator.geolocation.getCurrentPosition(
+        pos => res(pos),
+        err => rej(err),
+        { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+      );
+    });
+  }
+
+  async function init() {
+    try {
+      statusEl.className = 'muted';
+      statusEl.textContent = 'Requesting location…';
+      const pos = await getFix();
+      const { latitude, longitude, accuracy } = pos.coords;
+      lastFix = { lat: latitude, lng: longitude, accuracy };
+      const d = haversineM(latitude, longitude, SITE_LAT, SITE_LNG);
+      metaEl.textContent = `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(d)} m from center (accuracy ±${Math.round(accuracy)} m)`;
+      const within = d <= RADIUS_M;
+      statusEl.className = within ? 'ok' : 'warn';
+      statusEl.textContent = within ? 'On site ✓' : 'Outside geofence. Move closer.';
+      btn.disabled = !within;
+    } catch (e) {
+      statusEl.className = 'err';
+      statusEl.textContent = e.message.includes('denied')
+        ? 'Location permission denied. Allow it in site settings and reload.'
+        : 'Could not get your location. Try again outside or enable GPS.';
+      helpEl.style.display = 'block';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  formEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    if (!ENDPOINT) {
+      resultEl.textContent = 'Checked in locally (no backend connected).';
+      btn.disabled = false;
+      formEl.reset();
+      return;
+    }
+    const payload = {
+      secret: SECRET,
+      employeeId: $('#employeeId').value.trim(),
+      name: $('#name').value.trim(),
+      siteName: SITE_NAME,
+      lat: lastFix?.lat, lng: lastFix?.lng, accuracy: lastFix?.accuracy,
+      radiusM: RADIUS_M, userAgent: navigator.userAgent, note: ''
+    };
+    try {
+      const r = await fetch(ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const json = await r.json().catch(()=> ({}));
+      if (json.ok) resultEl.textContent = `Checked in at ${new Date().toLocaleString()} (server distance≈${json.distanceM ?? 'n/a'} m).`;
+      else resultEl.textContent = `Check-in failed: ${json.error || 'unknown_error'}`;
+    } catch (err) {
+      resultEl.textContent = `Network error: ${String(err)}`;
+    } finally {
+      btn.disabled = false;
+      formEl.reset();
+    }
+  });
+</script>
+</body>
+</html>
