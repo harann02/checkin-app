@@ -24,6 +24,7 @@
 <div class="wrap">
   <div class="card">
     <h1>On-Site Check-In</h1>
+
     <p id="status" class="muted">Requesting location…</p>
     <p id="meta" class="small muted"></p>
 
@@ -42,21 +43,27 @@
       <p id="result" class="small"></p>
     </form>
 
-    <p id="help" class="small muted section">If you don’t see a location prompt, allow Location for this site in your browser (🔒 → Site settings → Location → Allow) and reload.</p>
+    <p id="help" class="small muted section" style="display:none">
+      If you don’t see a location prompt, allow Location for this site in your browser
+      (🔒 → Site settings → Location → Allow) and reload. Check-ins must be done on a phone with GPS.
+    </p>
   </div>
 </div>
 
 <script>
-  // ====== EDIT THESE 3 LINES ONLY ======
-  const SITE_NAME = 'Labuan Office';     // your site label    5.302471699665353, 
-  const SITE_LAT  = 5.302471699665353;            // <-- replace with your Labuan Office latitude
-  const SITE_LNG  = 115.2304278099126;          // <-- replace with your Labuan Office longitude
-  const RADIUS_M  = 2000;                // 2 km radius
-  // Optional backend (Google Apps Script). Leave blank until you wire it.
-  const ENDPOINT  = '';                  // e.g. https://script.google.com/macros/s/AKfycb.../exec
-  const SECRET    = '';                  // must match your Apps Script SECRET
+  // ==== CONFIG (edit if needed) ===============================================
+  const SITE_NAME = 'Labuan Office';
+  const SITE_LAT  = 5.284357953275637;        // Labuan Office latitude
+  const SITE_LNG  = 115.23158301414999;       // Labuan Office longitude
+  const RADIUS_M  = 2000;                     // 2 km geofence
+  const MIN_ACCURACY_M = 200;                 // require ±200 m or better
+  const REQUIRE_MOBILE  = true;               // only allow phones to check in
 
-  // ====== No edits needed below ======
+  // Optional backend (Google Apps Script). Leave blank to skip logging.
+  const ENDPOINT  = '';                       // e.g. https://script.google.com/macros/s/AKfycb.../exec
+  const SECRET    = '';                       // must match Apps Script SECRET
+  // ============================================================================
+
   const $ = s => document.querySelector(s);
   const statusEl = $('#status'), metaEl = $('#meta'), helpEl = $('#help');
   const formEl = $('#form'), btn = $('#checkinBtn'), resultEl = $('#result');
@@ -66,6 +73,10 @@
     const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
     const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
     return 2*R*Math.asin(Math.sqrt(a));
+  }
+
+  function isMobileUA() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   }
 
   let lastFix = null;
@@ -88,17 +99,40 @@
       const pos = await getFix();
       const { latitude, longitude, accuracy } = pos.coords;
       lastFix = { lat: latitude, lng: longitude, accuracy };
+
       const d = haversineM(latitude, longitude, SITE_LAT, SITE_LNG);
-      metaEl.textContent = `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(d)} m from center (accuracy ±${Math.round(accuracy)} m)`;
-      const within = d <= RADIUS_M;
-      statusEl.className = within ? 'ok' : 'warn';
-      statusEl.textContent = within ? 'On site ✓' : 'Outside geofence. Move closer.';
-      btn.disabled = !within;
+      // Conservative distance: subtract accuracy so fuzzy fixes can't sneak in
+      const effectiveDistance = Math.max(0, d - accuracy);
+
+      // Core eligibility
+      let within = (effectiveDistance <= RADIUS_M) && (accuracy <= MIN_ACCURACY_M);
+
+      // Optional: mobile-only check-ins
+      if (REQUIRE_MOBILE && !isMobileUA()) within = false;
+
+      // Explain what's happening
+      metaEl.textContent =
+        `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(d)} m from center `
+        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effectiveDistance)} m).`;
+
+      if (within) {
+        statusEl.className = 'ok';
+        statusEl.textContent = 'On site ✓';
+        btn.disabled = false;
+      } else {
+        statusEl.className = 'warn';
+        let reasons = [];
+        if (accuracy > MIN_ACCURACY_M) reasons.push(`accuracy too poor (±${Math.round(accuracy)} m > ${MIN_ACCURACY_M} m)`);
+        if (effectiveDistance > RADIUS_M) reasons.push(`outside geofence (~${Math.round(effectiveDistance)} m > ${RADIUS_M} m)`);
+        if (REQUIRE_MOBILE && !isMobileUA()) reasons.push('mobile device required');
+        statusEl.textContent = `Cannot check in: ${reasons.join('; ')}. Move closer and use your phone outdoors.`;
+        btn.disabled = true;
+      }
     } catch (e) {
       statusEl.className = 'err';
       statusEl.textContent = e.message.includes('denied')
         ? 'Location permission denied. Allow it in site settings and reload.'
-        : 'Could not get your location. Try again outside or enable GPS.';
+        : 'Could not get your location. Step outside or enable GPS, then reload.';
       helpEl.style.display = 'block';
     }
   }
@@ -108,12 +142,15 @@
   formEl.addEventListener('submit', async (e) => {
     e.preventDefault();
     btn.disabled = true;
+
     if (!ENDPOINT) {
+      // Local-only mode (no logging)
       resultEl.textContent = 'Checked in locally (no backend connected).';
-      btn.disabled = false;
       formEl.reset();
+      btn.disabled = false;
       return;
     }
+
     const payload = {
       secret: SECRET,
       employeeId: $('#employeeId').value.trim(),
@@ -122,16 +159,24 @@
       lat: lastFix?.lat, lng: lastFix?.lng, accuracy: lastFix?.accuracy,
       radiusM: RADIUS_M, userAgent: navigator.userAgent, note: ''
     };
+
     try {
-      const r = await fetch(ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const r = await fetch(ENDPOINT, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
       const json = await r.json().catch(()=> ({}));
-      if (json.ok) resultEl.textContent = `Checked in at ${new Date().toLocaleString()} (server distance≈${json.distanceM ?? 'n/a'} m).`;
-      else resultEl.textContent = `Check-in failed: ${json.error || 'unknown_error'}`;
+      if (json.ok) {
+        resultEl.textContent = `Checked in at ${new Date().toLocaleString()} (server distance≈${json.distanceM ?? 'n/a'} m).`;
+      } else {
+        resultEl.textContent = `Check-in failed: ${json.error || 'unknown_error'}`;
+      }
     } catch (err) {
       resultEl.textContent = `Network error: ${String(err)}`;
     } finally {
-      btn.disabled = false;
       formEl.reset();
+      btn.disabled = false;
     }
   });
 </script>
