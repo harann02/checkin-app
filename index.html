@@ -5,11 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>On-Site Check-In</title>
 <style>
-  :root {
-    --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b;
-    --ok:#065f46; --warn:#92400e; --err:#991b1b; --line:#e5e7eb;
-    --primary:#0ea5e9; --primary-weak:#dbeafe; --primary-text:#ffffff;
-    --disabled:#94a3b8;
+  :root{
+    --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e5e7eb;
+    --ok:#065f46; --warn:#92400e; --err:#991b1b;
+    --primary:#0ea5e9; --primary-weak:#dbeafe; --primary-text:#ffffff; --disabled:#94a3b8;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -26,10 +25,7 @@
     width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--primary);
     background:var(--primary);color:var(--primary-text);font-size:16px;cursor:pointer
   }
-  button[disabled]{
-    background:var(--primary-weak);border-color:var(--primary-weak);
-    color:var(--disabled);cursor:not-allowed
-  }
+  button[disabled]{background:var(--primary-weak);border-color:var(--primary-weak);color:var(--disabled);cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -65,24 +61,25 @@
 </div>
 
 <script>
-  // ==== CONFIG ================================================================
+  // ==== SETTINGS (edit only if you change office/endpoint) ===================
   const SITE_NAME = 'Labuan Office';
   const SITE_LAT  = 5.284357953275637;
   const SITE_LNG  = 115.23158301414999;
-  const RADIUS_M  = 2000;           // 2 km
-  const MIN_ACCURACY_M = 200;       // require ±200 m or better
-  const REQUIRE_MOBILE  = true;     // only allow phones to check in
+  const RADIUS_M  = 2000;            // 2 km geofence
+  const MIN_ACCURACY_M = 200;        // require ±200 m or better
+  const REQUIRE_MOBILE  = true;      // only allow phones to check in
 
-  // Google Apps Script backend (EXACT /exec URL + matching SECRET)
+  // Your Google Apps Script web app (must be the /exec URL) + matching SECRET
   const ENDPOINT = 'https://script.google.com/macros/s/AKfycbyPEFnp5BJSBa7p1lG4_nOiZWyMfJjI7OwABXPk6AW4bEz2zonyO-ylH53kJB28f-6Q2A/exec';
   const SECRET   = 'Labu@n-2025-!';
-  // ===========================================================================
+  // ==========================================================================
 
   const $ = s => document.querySelector(s);
   const statusEl = $('#status'), metaEl = $('#meta'), helpEl = $('#help');
   const formEl = $('#form'), btn = $('#checkinBtn'), resultEl = $('#result');
   const idEl = $('#employeeId'), nameEl = $('#name');
 
+  // distance helper
   function haversineM(lat1, lon1, lat2, lon2){
     const R=6371000, toRad=d=>d*Math.PI/180;
     const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
@@ -95,34 +92,23 @@
   let withinOK = false;
 
   function updateButtonState(){
-    const idFilled   = idEl.value.trim().length>0;
-    const nameFilled = nameEl.value.trim().length>0;
-    btn.disabled = !(withinOK && idFilled && nameFilled);
+    const idOk = idEl.value.trim().length>0;
+    const nameOk = nameEl.value.trim().length>0;
+    btn.disabled = !(withinOK && idOk && nameOk);
   }
   idEl.addEventListener('input', updateButtonState);
   nameEl.addEventListener('input', updateButtonState);
 
   function getFix(){
-    return new Promise((res, rej)=>{
-      if(!navigator.geolocation) return rej(new Error('Geolocation not supported by this browser.'));
+    return new Promise((resolve, reject)=>{
+      if(!navigator.geolocation) return reject(new Error('Geolocation not supported.'));
       navigator.geolocation.getCurrentPosition(
-        pos => res(pos),
-        err => rej(err),
+        pos => resolve(pos),
+        err => reject(err),
         { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
       );
     });
   }
-
-  // Optional: ping backend for quick diagnosis
-  (async () => {
-    if(!ENDPOINT) return;
-    try {
-     const r = await fetch(ENDPOINT, {
-  method: 'POST',
-  body: JSON.stringify(payload)   // <— no headers; Safari will use text/plain
-});
-const json = await r.json().catch(() => ({}));
-
 
   async function init(){
     try{
@@ -134,14 +120,13 @@ const json = await r.json().catch(() => ({}));
       lastFix = { lat: latitude, lng: longitude, accuracy };
 
       const distance = haversineM(latitude, longitude, SITE_LAT, SITE_LNG);
-      const effectiveDistance = Math.max(0, distance - accuracy);
-      let within = (effectiveDistance <= RADIUS_M) && (accuracy <= MIN_ACCURACY_M);
-
+      const effective = Math.max(0, distance - accuracy);
+      let within = (effective <= RADIUS_M) && (accuracy <= MIN_ACCURACY_M);
       if (REQUIRE_MOBILE && !isMobileUA()) within = false;
 
       metaEl.textContent =
         `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(distance)} m from center `
-        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effectiveDistance)} m).`;
+        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effective)} m).`;
 
       if(within){
         statusEl.className='ok';
@@ -151,7 +136,7 @@ const json = await r.json().catch(() => ({}));
         statusEl.className='warn';
         const reasons=[];
         if(accuracy>MIN_ACCURACY_M) reasons.push(`accuracy too poor (±${Math.round(accuracy)} m > ${MIN_ACCURACY_M} m)`);
-        if(effectiveDistance>RADIUS_M) reasons.push(`outside geofence (~${Math.round(effectiveDistance)} m > ${RADIUS_M} m)`);
+        if(effective>RADIUS_M) reasons.push(`outside geofence (~${Math.round(effective)} m > ${RADIUS_M} m)`);
         if(REQUIRE_MOBILE && !isMobileUA()) reasons.push('mobile device required');
         statusEl.textContent = `Cannot check in: ${reasons.join('; ')}. Move closer and use your phone outdoors.`;
         withinOK = false;
@@ -167,21 +152,21 @@ const json = await r.json().catch(() => ({}));
       updateButtonState();
     }
   }
-
   document.addEventListener('DOMContentLoaded', init);
 
+  // SUBMIT (Safari-friendly: send as plain text, NO JSON header)
   formEl.addEventListener('submit', async (ev)=>{
     ev.preventDefault();
     updateButtonState();
     if(btn.disabled) return;
 
     btn.disabled = true;
-    resultEl.className = 'small muted';
-    resultEl.textContent = 'Submitting…';
+    resultEl.className='small muted';
+    resultEl.textContent='Submitting…';
 
     if(!ENDPOINT){
-      resultEl.textContent = 'Checked in locally (no backend configured).';
-      formEl.reset(); updateButtonState(); return btn.disabled=false;
+      resultEl.textContent='Checked in locally (no backend configured).';
+      formEl.reset(); updateButtonState(); btn.disabled=false; return;
     }
 
     const payload = {
@@ -194,9 +179,9 @@ const json = await r.json().catch(() => ({}));
     };
 
     try{
+      // IMPORTANT: no headers → iOS Safari skips the preflight that causes “Load failed”
       const r = await fetch(ENDPOINT, {
         method:'POST',
-        headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify(payload)
       });
       const json = await r.json().catch(()=> ({}));
@@ -205,7 +190,7 @@ const json = await r.json().catch(() => ({}));
         resultEl.textContent = `Checked in at ${new Date().toLocaleString()} (server distance≈${json.distanceM ?? 'n/a'} m).`;
         formEl.reset();
       }else{
-        resultEl.className='small warn';
+        resultEl.className='small err';
         resultEl.textContent = `Check-in failed: ${json.error || 'unknown_error'}`;
       }
     }catch(err){
