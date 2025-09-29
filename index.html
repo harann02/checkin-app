@@ -5,22 +5,25 @@
   <title>Daily Attendance</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --brand:#0b9df0; --ok:#138a36; --bad:#c0362c; }
+    :root { --brand:#0b9df0; --ok:#138a36; --bad:#c0362c; --text:#222; }
     body{margin:0;background:#f5f8fc;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
     .card{max-width:440px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;
           box-shadow:0 6px 18px rgba(0,0,0,.08)}
     .logo{width:130px;display:block;margin:0 auto 10px}
-    h1{margin:6px 0 8px;text-align:center}
+    h1{margin:6px 0 8px;text-align:center;color:var(--text)}
     #status{font-weight:700;text-align:center;margin:2px 0 10px}
     .meta{font-size:.92rem;color:#555;text-align:center;margin-bottom:16px}
-    .row{display:flex;gap:10px}
-    input{flex:1;padding:12px;border:1px solid #d3d8e0;border-radius:10px;font-size:1rem}
+    .field{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+    label{font-size:.9rem;color:#444;text-align:left}
+    input{padding:12px;border:1px solid #d3d8e0;border-radius:10px;font-size:1rem}
     .btn{width:100%;padding:13px 16px;border:0;border-radius:12px;font-weight:700;
          color:#fff;background:var(--brand);cursor:pointer}
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .btn-outline{background:#fff;color:var(--brand);border:2px solid var(--brand)}
     .mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
-    .small{font-size:.9rem}.ok{color:var(--ok)}.err{color:var(--bad)}
+    .small{font-size:.95rem}
+    .ok{color:var(--ok)}.err{color:var(--bad)}
+    .result{min-height:22px} /* reserve space so layout doesn't jump */
   </style>
 </head>
 <body>
@@ -32,22 +35,27 @@
     <div id="status">Checking location…</div>
     <div id="meta" class="meta"></div>
 
-    <div class="row">
-      <input id="employeeId" placeholder="Employee ID" autocomplete="off" />
+    <div class="field">
+      <label for="employeeId">Employee ID</label>
+      <input id="employeeId" placeholder="e.g., CD111" autocomplete="off" />
+    </div>
+
+    <div class="field">
+      <label for="name">Name</label>
       <input id="name" placeholder="Full name" autocomplete="name" />
     </div>
 
     <button id="checkinBtn" class="btn mt16" disabled>Check In</button>
     <button id="checkoutBtn" class="btn btn-outline mt8">Check Out</button>
 
-    <div id="result" class="small mt12"></div>
+    <div id="result" class="small result mt12"></div>
   </div>
 
   <script>
     // ================== CONFIG ==================
     const SITE = { name: "Labuan Office", lat: 5.284357953275637, lng: 115.23158301414999, radiusM: 2000 };
     // IMPORTANT: paste your Apps Script Web App URL (the /exec link). Keep the v= tag.
-    const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8TVB01G7faS7_CUZJU99OS5xOlf5TvBVS0ZPuwgQzFjVEyiRLbOe1Iqy019B67c8aOQ/exec?v=B9";
+    const ENDPOINT = "PASTE_YOUR_EXEC_URL_HERE?v=B9";
     const SECRET = "Labu@n-2025-!";
     const REQUIRE_ONSITE_TO_CHECKOUT = false; // set true if you want on-site only checkout
 
@@ -65,15 +73,15 @@
       return 2*R*Math.asin(Math.sqrt(a));
     }
     function buster(url){return url+(url.includes("?")?"&":"?")+"t="+Date.now();}
+    function nowText(){ return new Date().toLocaleString(); }
 
     async function ping(){
       try{
         const r = await fetch(buster(ENDPOINT), { method:"GET" });
-        const t = await r.text();
-        console.log("Ping:", t);
+        await r.text(); // just to ensure connectivity
       }catch(e){
         resultEl.className="small err";
-        resultEl.textContent="Cannot reach server. Try a different network or disable VPN/ad-block.";
+        resultEl.textContent="Cannot reach server. Try different network / disable VPN.";
       }
     }
 
@@ -127,11 +135,15 @@
         const data = await r.json();
         if(data.ok){
           resultEl.className = "small ok";
-          resultEl.textContent = (action==="checkin") ? "Checked in ✅" :
-                                 `Checked out ✅ ${data.durationMin?`(${data.durationMin} min)`:''}`;
+          if(action==="checkin"){
+            resultEl.textContent = `Checked in ✅  ${nowText()}`;
+          }else{
+            const extra = data.durationMin ? ` (${data.durationMin} min)` : "";
+            resultEl.textContent = `Checked out ✅  ${nowText()}${extra}`;
+          }
         }else{
           resultEl.className="small err";
-          resultEl.textContent="Check-in/out failed: "+(data.error||"unknown");
+          resultEl.textContent="Action failed: "+(data.error||"unknown");
         }
       }catch(e){
         resultEl.className="small err";
