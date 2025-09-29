@@ -1,179 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Daily Attendance</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f5f8fc;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      min-height: 100vh;
-    }
-    .container {
-      background: #fff;
-      margin-top: 30px;
-      padding: 25px;
-      border-radius: 12px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      max-width: 420px;
-      width: 100%;
-      text-align: center;
-    }
-    .logo {
-      width: 120px;
-      margin-bottom: 15px;
-    }
-    h1 {
-      margin: 0;
-      font-size: 1.6em;
-      color: #222;
-    }
-    #status {
-      margin-top: 8px;
-      font-weight: bold;
-    }
-    .info {
-      font-size: 0.9em;
-      color: #555;
-      margin: 10px 0 20px;
-    }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    input {
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 1em;
-    }
-    button {
-      background: #0b9df0;
-      color: #fff;
-      padding: 12px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 1em;
-      font-weight: bold;
-    }
-    button:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
-    #result {
-      margin-top: 15px;
-      font-size: 0.9em;
-      color: red;
-    }
+    :root { --brand:#0b9df0; --ok:#138a36; --bad:#c0362c; }
+    body{margin:0;background:#f5f8fc;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    .card{max-width:440px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;
+          box-shadow:0 6px 18px rgba(0,0,0,.08)}
+    .logo{width:130px;display:block;margin:0 auto 10px}
+    h1{margin:6px 0 8px;text-align:center}
+    #status{font-weight:700;text-align:center;margin:2px 0 10px}
+    .meta{font-size:.92rem;color:#555;text-align:center;margin-bottom:16px}
+    .row{display:flex;gap:10px}
+    input{flex:1;padding:12px;border:1px solid #d3d8e0;border-radius:10px;font-size:1rem}
+    .btn{width:100%;padding:13px 16px;border:0;border-radius:12px;font-weight:700;
+         color:#fff;background:var(--brand);cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-outline{background:#fff;color:var(--brand);border:2px solid var(--brand)}
+    .mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
+    .small{font-size:.9rem}.ok{color:var(--ok)}.err{color:var(--bad)}
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Company Logo -->
-    <img src="https://ik.imagekit.io/f4l5qeepf/CDSB%20LOGO-V2.png?updatedAt=1759104698723" alt="CDSB Logo" class="logo">
-
-    <!-- Title -->
+  <div class="card">
+    <img class="logo" alt="CDSB" 
+      src="https://ik.imagekit.io/f4l5qeepf/CDSB%20LOGO-V2.png?updatedAt=1759104698723" />
     <h1>Daily Attendance</h1>
-    <div id="status">Checking location...</div>
-    <div id="meta" class="info"></div>
 
-    <!-- Form -->
-    <form id="form">
-      <input type="text" id="employeeId" placeholder="Employee ID" required>
-      <input type="text" id="name" placeholder="Full Name" required>
-      <button type="submit" id="checkinBtn" disabled>Check In</button>
-    </form>
+    <div id="status">Checking location…</div>
+    <div id="meta" class="meta"></div>
 
-    <div id="result"></div>
+    <div class="row">
+      <input id="employeeId" placeholder="Employee ID" autocomplete="off" />
+      <input id="name" placeholder="Full name" autocomplete="name" />
+    </div>
+
+    <button id="checkinBtn" class="btn mt16" disabled>Check In</button>
+    <button id="checkoutBtn" class="btn btn-outline mt8">Check Out</button>
+
+    <div id="result" class="small mt12"></div>
   </div>
 
   <script>
-    // CONFIG (edit if needed)
-    const SITE_NAME = "Labuan Office";
-    const SITE_LAT = 5.284357953275637;
-    const SITE_LNG = 115.23158301414999;
-    const RADIUS_M = 2000;
-    const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8TVB01G7faS7_CUZJU99OS5xOlf5TvBVS0ZPuwgQzFjVEyiRLbOe1Iqy019B67c8aOQ/exec?v=B9"; // <-- paste Apps Script Web App URL here
+    // ================== CONFIG ==================
+    const SITE = { name: "Labuan Office", lat: 5.284357953275637, lng: 115.23158301414999, radiusM: 2000 };
+    // IMPORTANT: paste your Apps Script Web App URL (the /exec link). Keep the v= tag.
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8TVB01G7faS7_CUZJU99OS5xOlf5TvBVS0ZPuwgQzFjVEyiRLbOe1Iqy019B67c8aOQ/exec?v=B9";
     const SECRET = "Labu@n-2025-!";
+    const REQUIRE_ONSITE_TO_CHECKOUT = false; // set true if you want on-site only checkout
 
-    const statusEl = document.getElementById("status");
-    const metaEl = document.getElementById("meta");
-    const btn = document.getElementById("checkinBtn");
-    const form = document.getElementById("form");
-    const resultEl = document.getElementById("result");
+    // ================== HELPERS ==================
+    const $ = s => document.querySelector(s);
+    const statusEl = $("#status"), metaEl = $("#meta"), resultEl = $("#result");
+    const inBtn = $("#checkinBtn"), outBtn = $("#checkoutBtn");
+    const idEl = $("#employeeId"), nameEl = $("#name");
+    let current = null, within = false;
 
-    let current = null;
+    function haversineM(lat1, lon1, lat2, lon2){
+      const R=6371000, toRad=d=>d*Math.PI/180;
+      const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));
+    }
+    function buster(url){return url+(url.includes("?")?"&":"?")+"t="+Date.now();}
 
-    // Distance (haversine)
-    function haversineM(lat1, lon1, lat2, lon2) {
-      const R = 6371000, toRad = d => d * Math.PI / 180;
-      const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-      return 2 * R * Math.asin(Math.sqrt(a));
+    async function ping(){
+      try{
+        const r = await fetch(buster(ENDPOINT), { method:"GET" });
+        const t = await r.text();
+        console.log("Ping:", t);
+      }catch(e){
+        resultEl.className="small err";
+        resultEl.textContent="Cannot reach server. Try a different network or disable VPN/ad-block.";
+      }
     }
 
-    // Get location
-    navigator.geolocation.getCurrentPosition(pos => {
-      const { latitude, longitude, accuracy } = pos.coords;
-      current = { lat: latitude, lng: longitude, accuracy };
+    // ================== GEO ==================
+    function setUI(){
+      inBtn.disabled = !within;
+      if (REQUIRE_ONSITE_TO_CHECKOUT) outBtn.disabled = !within;
+    }
 
-      const distance = haversineM(latitude, longitude, SITE_LAT, SITE_LNG);
-      const effective = Math.max(0, distance - accuracy);
-      const within = effective <= RADIUS_M;
+    function onGeo(pos){
+      const { latitude:lat, longitude:lng, accuracy } = pos.coords;
+      current = { lat, lng, accuracy };
+
+      const dist = haversineM(lat, lng, SITE.lat, SITE.lng);
+      const effective = Math.max(0, dist - accuracy);
+      within = effective <= SITE.radiusM;
 
       statusEl.textContent = within ? "On site ✓" : "Outside geofence ✗";
-      statusEl.style.color = within ? "green" : "red";
-      metaEl.textContent = `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(distance)} m from center (accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effective)} m).`;
+      statusEl.className = within ? "ok" : "err";
+      metaEl.textContent =
+        `${SITE.name} • radius ${SITE.radiusM} m • you are ~${Math.round(dist)} m from center `
+        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effective)} m).`;
 
-      btn.disabled = !within;
-    }, err => {
+      setUI();
+    }
+
+    function onGeoErr(){
       statusEl.textContent = "Location unavailable";
-      statusEl.style.color = "red";
-    });
+      statusEl.className = "err";
+      within=false; setUI();
+    }
 
-    // Handle submit
-    form.addEventListener("submit", async e => {
-      e.preventDefault();
+    // ================== SUBMITTERS ==================
+    async function send(action){
       resultEl.textContent = "";
+      const employeeId = idEl.value.trim(), name = nameEl.value.trim();
+      if(!employeeId || !name){ resultEl.className="small err"; resultEl.textContent="Enter ID and name."; return; }
+      if(!current){ resultEl.className="small err"; resultEl.textContent="No location yet."; return; }
+      if(action==="checkin" && !within){ resultEl.className="small err"; resultEl.textContent="You must be on-site to check in."; return; }
+      if(action==="checkout" && REQUIRE_ONSITE_TO_CHECKOUT && !within){ resultEl.className="small err"; resultEl.textContent="You must be on-site to check out."; return; }
 
       const payload = {
-        secret: SECRET,
-        employeeId: document.getElementById("employeeId").value,
-        name: document.getElementById("name").value,
-        siteName: SITE_NAME,
-        lat: current?.lat,
-        lng: current?.lng,
-        accuracy: current?.accuracy,
-        userAgent: navigator.userAgent
+        secret: SECRET, action,
+        employeeId, name, siteName: SITE.name,
+        lat: current.lat, lng: current.lng, accuracy: current.accuracy,
+        radiusM: SITE.radiusM, userAgent: navigator.userAgent
       };
 
-      try {
-        const res = await fetch(ENDPOINT, {
-          method: "POST",
-          body: JSON.stringify(payload),
-          headers: { "Content-Type": "application/json" }
-        });
-        const data = await res.json();
-        if (data.ok) {
-          resultEl.style.color = "green";
-          resultEl.textContent = "Check-in successful!";
-        } else {
-          resultEl.style.color = "red";
-          resultEl.textContent = "Check-in failed: " + data.error;
+      try{
+        const r = await fetch(buster(ENDPOINT), { method:"POST", body: JSON.stringify(payload) }); // no headers → no preflight
+        const data = await r.json();
+        if(data.ok){
+          resultEl.className = "small ok";
+          resultEl.textContent = (action==="checkin") ? "Checked in ✅" :
+                                 `Checked out ✅ ${data.durationMin?`(${data.durationMin} min)`:''}`;
+        }else{
+          resultEl.className="small err";
+          resultEl.textContent="Check-in/out failed: "+(data.error||"unknown");
         }
-      } catch (err) {
-        resultEl.style.color = "red";
-        resultEl.textContent = "Network error: " + err.message;
+      }catch(e){
+        resultEl.className="small err";
+        resultEl.textContent="Network error: "+e.message;
       }
-    });
+    }
+
+    inBtn.addEventListener("click", ()=>send("checkin"));
+    outBtn.addEventListener("click", ()=>send("checkout"));
+
+    // Init
+    ping();
+    navigator.geolocation.getCurrentPosition(onGeo, onGeoErr, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
   </script>
 </body>
 </html>
