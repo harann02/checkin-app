@@ -1,231 +1,179 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>On-Site Check • Multi-Site + Check-Out</title>
-<style>
-  :root{
-    --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#64748b; --line:#e5e7eb;
-    --ok:#065f46; --warn:#92400e; --err:#991b1b;
-    --primary:#0ea5e9; --primary-weak:#dbeafe; --primary-text:#fff; --disabled:#94a3b8;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-  .wrap{max-width:640px;margin:32px auto;padding:0 16px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.06);padding:20px}
-  h1{margin:0 0 8px;font-size:22px}
-  .muted{color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-  label{display:block;font-size:13px;margin:12px 0 6px;color:#334155}
-  input,select{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .section{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}
-  .small{font-size:13px}
-  .btn{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--primary);
-       background:var(--primary);color:var(--primary-text);font-size:16px;cursor:pointer}
-  .btn[disabled]{background:var(--primary-weak);border-color:var(--primary-weak);color:var(--disabled);cursor:not-allowed}
-  .btn.secondary{background:#16a34a;border-color:#16a34a}
-  .btn.secondary[disabled]{background:#dcfce7;border-color:#dcfce7;color:#86efac}
-  .btnrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-</style>
+  <meta charset="UTF-8">
+  <title>Daily Attendance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f8fc;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+    .container {
+      background: #fff;
+      margin-top: 30px;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo {
+      width: 120px;
+      margin-bottom: 15px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.6em;
+      color: #222;
+    }
+    #status {
+      margin-top: 8px;
+      font-weight: bold;
+    }
+    .info {
+      font-size: 0.9em;
+      color: #555;
+      margin: 10px 0 20px;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    input {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1em;
+    }
+    button {
+      background: #0b9df0;
+      color: #fff;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1em;
+      font-weight: bold;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #result {
+      margin-top: 15px;
+      font-size: 0.9em;
+      color: red;
+    }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <h1>On-Site Check</h1>
+  <div class="container">
+    <!-- Company Logo -->
+    <img src="https://ik.imagekit.io/f4l5qeepf/CDSB%20LOGO-V2.png?updatedAt=1759104698723" alt="CDSB Logo" class="logo">
 
-    <div class="row">
-      <div>
-        <label for="site">Site</label>
-        <select id="site"></select>
-      </div>
-      <div>
-        <label for="radius">Radius (m)</label>
-        <input id="radius" type="number" value="2000" />
-      </div>
-    </div>
+    <!-- Title -->
+    <h1>Daily Attendance</h1>
+    <div id="status">Checking location...</div>
+    <div id="meta" class="info"></div>
 
-    <p id="status" class="muted">Requesting location…</p>
-    <p id="meta" class="small muted"></p>
-
-    <form id="form" class="section" autocomplete="off">
-      <div class="row">
-        <div>
-          <label for="employeeId">Employee ID</label>
-          <input id="employeeId" required placeholder="e.g., OG1234" />
-        </div>
-        <div>
-          <label for="name">Name</label>
-          <input id="name" required placeholder="Full name" />
-        </div>
-      </div>
-
-      <div class="btnrow" style="margin-top:12px">
-        <button id="btnIn"  class="btn"         type="button" disabled>Check In</button>
-        <button id="btnOut" class="btn secondary" type="button" disabled>Check Out</button>
-      </div>
-
-      <p id="result" class="small"></p>
+    <!-- Form -->
+    <form id="form">
+      <input type="text" id="employeeId" placeholder="Employee ID" required>
+      <input type="text" id="name" placeholder="Full Name" required>
+      <button type="submit" id="checkinBtn" disabled>Check In</button>
     </form>
 
-    <p id="help" class="small muted section" style="display:none">
-      If you don’t see a location prompt, allow Location for this site
-      (🔒 → Site settings → Location → Allow) and reload. Phones with GPS only.
-    </p>
+    <div id="result"></div>
   </div>
-</div>
 
-<script>
-  // ========= SETTINGS (edit ENDPOINT; add more sites if you like) =========
-  const SITES = {
-    'Labuan Office': { lat: 5.284357953275637, lng: 115.23158301414999 },
-    // 'SAMUR Plant':    { lat: 5.123456, lng: 115.123456 },
-    // 'Offshore F23':   { lat: 4.987654, lng: 114.567890 },
-  };
-  const MIN_ACCURACY_M = 200;
-  const REQUIRE_MOBILE = true;
+  <script>
+    // CONFIG (edit if needed)
+    const SITE_NAME = "Labuan Office";
+    const SITE_LAT = 5.284357953275637;
+    const SITE_LNG = 115.23158301414999;
+    const RADIUS_M = 2000;
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8TVB01G7faS7_CUZJU99OS5xOlf5TvBVS0ZPuwgQzFjVEyiRLbOe1Iqy019B67c8aOQ/exec?v=B9"; // <-- paste Apps Script Web App URL here
+    const SECRET = "Labu@n-2025-!";
 
-  // IMPORTANT: use your new B8-bound /exec URL (add ?v=B8 to bust cache)
-  const ENDPOINT = 'https://script.google.com/macros/s/AKfycbw8TVB01G7faS7_CUZJU99OS5xOlf5TvBVS0ZPuwgQzFjVEyiRLbOe1Iqy019B67c8aOQ/exec?v=B9';
-  const SECRET   = 'Labu@n-2025-!';
+    const statusEl = document.getElementById("status");
+    const metaEl = document.getElementById("meta");
+    const btn = document.getElementById("checkinBtn");
+    const form = document.getElementById("form");
+    const resultEl = document.getElementById("result");
 
-  // ========= RUNTIME =========
-  const $ = s => document.querySelector(s);
-  const siteSel = $('#site'), radiusEl = $('#radius');
-  const statusEl = $('#status'), metaEl = $('#meta'), helpEl = $('#help');
-  const idEl = $('#employeeId'), nameEl = $('#name');
-  const btnIn = $('#btnIn'), btnOut = $('#btnOut'), resultEl = $('#result');
+    let current = null;
 
-  function isMobileUA(){ return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||''); }
-  function haversineM(lat1, lon1, lat2, lon2){
-    const R=6371000, toRad=d=>d*Math.PI/180;
-    const dLat=toRad(lat2-lat1), dLon=toRad(lat2-lon1);
-  }
-  // fix a typo in lon
-  function haversineM(lat1, lon1, lat2, lon2){
-    const R=6371000, toRad=d=>d*Math.PI/180;
-    const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
-    const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-    return 2*R*Math.asin(Math.sqrt(a));
-  }
+    // Distance (haversine)
+    function haversineM(lat1, lon1, lat2, lon2) {
+      const R = 6371000, toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
 
-  // populate site dropdown + support ?site=… in URL
-  (function initSites(){
-    const params = new URLSearchParams(location.search);
-    const pre = params.get('site');
-    Object.keys(SITES).forEach(name=>{
-      const opt=document.createElement('option');
-      opt.value=name; opt.textContent=name;
-      siteSel.appendChild(opt);
-    });
-    if(pre && SITES[pre]) siteSel.value = pre;
-  })();
-
-  let lastFix=null, withinOK=false;
-  function getFix(){
-    return new Promise((res, rej)=>{
-      if(!navigator.geolocation) return rej(new Error('Geolocation not supported.'));
-      navigator.geolocation.getCurrentPosition(
-        pos=>res(pos),
-        err=>rej(err),
-        { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
-      );
-    });
-  }
-  function updateButtons(){
-    const idOk = idEl.value.trim().length>0;
-    const nmOk = nameEl.value.trim().length>0;
-    const ready = withinOK && idOk && nmOk;
-    btnIn.disabled = !ready;
-    btnOut.disabled = !ready; // require on-site for checkout as well; change if you want off-site checkout
-  }
-  idEl.addEventListener('input', updateButtons);
-  nameEl.addEventListener('input', updateButtons);
-  siteSel.addEventListener('change', ()=>init()); // re-check geofence if site changed
-  radiusEl.addEventListener('input', ()=>init());
-
-  async function init(){
-    try{
-      statusEl.className='muted';
-      statusEl.textContent='Requesting location…';
-
-      const pos = await getFix();
+    // Get location
+    navigator.geolocation.getCurrentPosition(pos => {
       const { latitude, longitude, accuracy } = pos.coords;
-      lastFix = { lat: latitude, lng: longitude, accuracy };
+      current = { lat: latitude, lng: longitude, accuracy };
 
-      const site = SITES[siteSel.value];
-      const r = Math.max(50, Number(radiusEl.value)||2000);
-      const d = haversineM(latitude, longitude, site.lat, site.lng);
-      const eff = Math.max(0, d - accuracy);
+      const distance = haversineM(latitude, longitude, SITE_LAT, SITE_LNG);
+      const effective = Math.max(0, distance - accuracy);
+      const within = effective <= RADIUS_M;
 
-      let within = (eff <= r) && (accuracy <= MIN_ACCURACY_M);
-      if(REQUIRE_MOBILE && !isMobileUA()) within = false;
+      statusEl.textContent = within ? "On site ✓" : "Outside geofence ✗";
+      statusEl.style.color = within ? "green" : "red";
+      metaEl.textContent = `${SITE_NAME} • radius ${RADIUS_M} m • you are ~${Math.round(distance)} m from center (accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(effective)} m).`;
 
-      metaEl.textContent =
-        `${siteSel.value} • radius ${r} m • you are ~${Math.round(d)} m from center `
-        + `(accuracy ±${Math.round(accuracy)} m; effective ~${Math.round(eff)} m).`;
+      btn.disabled = !within;
+    }, err => {
+      statusEl.textContent = "Location unavailable";
+      statusEl.style.color = "red";
+    });
 
-      withinOK = within;
-      if(within){
-        statusEl.className='ok'; statusEl.textContent='On site ✓';
-      }else{
-        statusEl.className='warn';
-        const reasons=[];
-        if(accuracy>MIN_ACCURACY_M) reasons.push(`accuracy too poor (±${Math.round(accuracy)} m > ${MIN_ACCURACY_M} m)`);
-        if(eff>r) reasons.push(`outside geofence (~${Math.round(eff)} m > ${r} m)`);
-        if(REQUIRE_MOBILE && !isMobileUA()) reasons.push('mobile device required');
-        statusEl.textContent='Cannot proceed: '+reasons.join('; ');
-      }
-      updateButtons();
-    }catch(e){
-      statusEl.className='err';
-      statusEl.textContent = e.message.includes('denied')
-        ? 'Location permission denied. Allow it in site settings and reload.'
-        : 'Could not get your location. Step outside or enable GPS, then reload.';
-      helpEl.style.display='block';
-      withinOK=false; updateButtons();
-    }
-  }
-  document.addEventListener('DOMContentLoaded', init);
+    // Handle submit
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      resultEl.textContent = "";
 
-  async function submitAction(action){
-    if(btnIn.disabled && btnOut.disabled) return;
-    const payload = {
-      secret: SECRET,
-      action,                        // 'checkin' or 'checkout'
-      employeeId: idEl.value.trim(),
-      name: nameEl.value.trim(),
-      siteName: siteSel.value,
-      lat: lastFix?.lat, lng: lastFix?.lng, accuracy: lastFix?.accuracy,
-      radiusM: Number(radiusEl.value)||2000,
-      userAgent: navigator.userAgent, note: ''
-    };
-    resultEl.className='small muted';
-    resultEl.textContent='Submitting…';
+      const payload = {
+        secret: SECRET,
+        employeeId: document.getElementById("employeeId").value,
+        name: document.getElementById("name").value,
+        siteName: SITE_NAME,
+        lat: current?.lat,
+        lng: current?.lng,
+        accuracy: current?.accuracy,
+        userAgent: navigator.userAgent
+      };
 
-    try{
-      const r = await fetch(ENDPOINT, { method:'POST', body: JSON.stringify(payload) });
-      const json = await r.json().catch(()=> ({}));
-      if(json && json.ok){
-        resultEl.className='small ok';
-        if(action==='checkin'){
-          resultEl.textContent = `Checked IN at ${new Date().toLocaleString()}.`;
+      try {
+        const res = await fetch(ENDPOINT, {
+          method: "POST",
+          body: JSON.stringify(payload),
+          headers: { "Content-Type": "application/json" }
+        });
+        const data = await res.json();
+        if (data.ok) {
+          resultEl.style.color = "green";
+          resultEl.textContent = "Check-in successful!";
         } else {
-          resultEl.textContent = `Checked OUT at ${new Date().toLocaleString()} (duration≈${json.durationMin ?? 'n/a'} min).`;
+          resultEl.style.color = "red";
+          resultEl.textContent = "Check-in failed: " + data.error;
         }
-        // optional: clear fields after success
-        // idEl.value=''; nameEl.value=''; updateButtons();
-      }else{
-        resultEl.className='small err';
-        resultEl.textContent = `Failed: ${json.error || 'unknown_error'}`;
+      } catch (err) {
+        resultEl.style.color = "red";
+        resultEl.textContent = "Network error: " + err.message;
       }
-    }catch(err){
-      resultEl.className='small err';
-      resultEl.textContent = `Network error: ${String(err)}`;
-    }
-  }
-  btnIn.addEventListener('click', ()=> submitAction('checkin'));
-  btnOut.addEventListener('click',()=> submitAction('checkout'));
-</script>
+    });
+  </script>
 </body>
 </html>
