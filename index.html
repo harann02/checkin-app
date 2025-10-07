@@ -8,8 +8,7 @@
     :root { --brand:#0b9df0; --ok:#138a36; --bad:#c0362c; --text:#222; --muted:#6b7280; }
     *{box-sizing:border-box}
     body{margin:0;background:#f5f8fc;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial}
-    .card{max-width:480px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;
-          box-shadow:0 6px 18px rgba(0,0,0,.08)}
+    .card{max-width:480px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
     .logo{width:130px;display:block;margin:0 auto 10px}
     h1{margin:6px 0 8px;text-align:center;color:var(--text)}
     #status{font-weight:700;text-align:center;margin:2px 0 8px}
@@ -18,8 +17,7 @@
     .field{display:flex;flex-direction:column;gap:6px}
     label{font-size:.9rem;color:#444}
     input, select{padding:12px;border:1px solid #d3d8e0;border-radius:10px;font-size:1rem}
-    .btn{width:100%;padding:13px 16px;border:0;border-radius:12px;font-weight:700;
-         color:#fff;background:var(--brand);cursor:pointer}
+    .btn{width:100%;padding:13px 16px;border:0;border-radius:12px;font-weight:700;color:#fff;background:var(--brand);cursor:pointer}
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .btn-outline{background:#fff;color:var(--brand);border:2px solid var(--brand)}
     .mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
@@ -31,16 +29,13 @@
     .panel h3{margin:0 0 6px;font-size:1rem}
     .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #e6ebf2}
     .kv:last-child{border-bottom:0}
-    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.8rem}
-    .tag.ok{background:#e8f6ee;color:var(--ok);border:1px solid #bfe9cf}
-    .tag.err{background:#fdecec;color:var(--bad);border:1px solid #f8c7c3}
     .footnote{margin-top:8px;font-size:.85rem}
   </style>
 </head>
 <body>
   <div class="card">
-    <img class="logo" alt="CDSB" 
-      src="https://ik.imagekit.io/f4l5qeepf/CDSB%20LOGO-V2.png?updatedAt=1759104698723" />
+    <img class="logo" alt="CDSB"
+         src="https://ik.imagekit.io/f4l5qeepf/CDSB%20LOGO-V2.png?updatedAt=1759104698723" />
     <h1>Daily Attendance</h1>
 
     <div id="status" class="muted">Checking location…</div>
@@ -83,17 +78,21 @@
   </div>
 
   <script>
-    // Dynamic sites (TODO: update lat/lng for Lahad Datu & Sipitang)
+    // ====== CONFIG ======
+    // Adjust these coords if needed
     const SITES = {
-      "CDSB Office": { name: "CDSB Office", lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
-      "Lahad Datu Site": { name: "Lahad Datu Site", lat: 5.027785331868045, lng: 118.3610085876295, radiusM: 2000 },
-      "Sipitang Site": { name: "Sipitang Site", lat: 5.011133282563158, lng: 115.50520715008498, radiusM: 2000 }
+      "CDSB Office":     { name: "CDSB Office",     lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
+      "Lahad Datu Site": { name: "Lahad Datu Site", lat: 5.027785331868045, lng: 118.3610085876295,  radiusM: 2000 },
+      "Sipitang Site":   { name: "Sipitang Site",   lat: 5.011133282563158, lng: 115.50520715008498, radiusM: 2000 }
     };
-    let SITE = SITES["CDSB Office"];
-    const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8ubsgCsIbFmGi_7wJUzJA0PJwtT2GutZPucDzvY5Tl8gYZkAR8jtLYA45jEjST6Bc2Q/exec?v=B10";               
-    const SECRET = "Labu@n-2025-!";
-    const REQUIRE_ONSITE_TO_CHECKOUT = false;
+    const ACCURACY_MAX = 120;               // require GPS accuracy ≤ this (meters) to be "on-site"
+    const REQUIRE_ONSITE_TO_CHECKOUT = true;
 
+    // Your Apps Script endpoint + secret
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8ubsgCsIbFmGi_7wJUzJA0PJwtT2GutZPucDzvY5Tl8gYZkAR8jtLYA45jEjST6Bc2Q/exec?v=B10";
+    const SECRET   = "Labu@n-2025-!";
+
+    // ====== Helpers / DOM ======
     const $ = s => document.querySelector(s);
     const statusEl = $("#status"), metaEl = $("#meta"), resultEl = $("#result");
     const inBtn = $("#checkinBtn"), outBtn = $("#checkoutBtn");
@@ -103,116 +102,121 @@
           sessDur=$("#sessDur"), sessDurRow=$("#sessDurRow"),
           withinFlag=$("#withinFlag");
 
-    let current = null, within = false, watchId = null;
+    let SITE = SITES["CDSB Office"];
+    let current = null; // {lat, lng, accuracy}
+    let within = false;
+
+    const toRad = d => d * Math.PI / 180;
+    const pretty = ms => new Date(ms).toLocaleString();
+    const buster = url => url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+    const ok  = m => { resultEl.className = "small ok result";  resultEl.textContent = m; };
+    const err = m => { resultEl.className = "small err result"; resultEl.textContent = m; };
+
+    function haversineM(lat1, lon1, lat2, lon2){
+      const R=6371000; const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));
+    }
 
     function setSite(name){
       SITE = SITES[name] || SITES["CDSB Office"];
-      if(current){ refreshGeoMeta(); }
+      if (current) refreshGeoMeta();
     }
-    function refreshGeoMeta(){
+
+    function refreshGeoMeta() {
       const { lat, lng, accuracy } = current || {};
-      if(lat == null) return;
+      if (lat == null) return;
       const dist = haversineM(lat, lng, SITE.lat, SITE.lng);
-      const effective = Math.max(0, dist - accuracy);
-      within = effective <= SITE.radiusM;
+      within = (dist <= SITE.radiusM) && (accuracy <= ACCURACY_MAX);
       statusEl.textContent = within ? "On site ✓" : "Outside geofence ✗";
-      statusEl.className = within ? "ok" : "err";
+      statusEl.className   = within ? "ok" : "err";
       metaEl.textContent = `${SITE.name} • radius ${SITE.radiusM} m • you are ~${Math.round(dist)} m from center (accuracy ±${Math.round(accuracy)} m)`;
-      withinFlag.textContent = `Within radius: ${within ? "True" : "False"}`;
+      withinFlag.textContent = `Within radius: ${within ? "True" : "False"} (acc ≤ ${ACCURACY_MAX} m)`;
       setButtons();
     }
 
-    function haversineM(lat1, lon1, lat2, lon2){
-      const R=6371000, toRad=d=>d*Math.PI/180;
-      const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
-      const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-      return 2*R*Math.asin(Math.sqrt(a));
-    }
-    function buster(url){return url+(url.includes("?")?"&":"?")+"t="+Date.now();}
-    function pretty(d){ return new Date(d).toLocaleString(); }
-    function ok(msg){ resultEl.className="small ok result"; resultEl.textContent=msg; }
-    function err(msg){ resultEl.className="small err result"; resultEl.textContent=msg; }
-
+    // ====== Profile (local) ======
     function loadProfile(){
-      const savedId = localStorage.getItem("emp:id") || "";
-      const savedName = localStorage.getItem("emp:name") || "";
-      const savedSite = localStorage.getItem("emp:site") || "CDSB Office";
-      idEl.value = savedId;
-      nameEl.value = savedName;
-      if(siteEl){ siteEl.value = savedSite; }
-      setSite(savedSite);
+      idEl.value   = localStorage.getItem("emp:id")   || "";
+      nameEl.value = localStorage.getItem("emp:name") || "";
+      siteEl.value = localStorage.getItem("emp:site") || "CDSB Office";
+      setSite(siteEl.value);
     }
     function saveProfile(){
-      localStorage.setItem("emp:id", idEl.value.trim());
+      localStorage.setItem("emp:id",   idEl.value.trim());
       localStorage.setItem("emp:name", nameEl.value.trim());
       localStorage.setItem("emp:site", siteEl.value);
     }
 
+    // ====== Session (local) ======
+    function readSession(){
+      try { return JSON.parse(localStorage.getItem("sess:open") || "null"); }
+      catch { localStorage.removeItem("sess:open"); return null; }
+    }
+    function writeSession(s){ localStorage.setItem("sess:open", JSON.stringify(s)); }
+    function clearSession(){ localStorage.removeItem("sess:open"); }
+
     function loadSession(){
-      const raw = localStorage.getItem("sess:open");
-      if(!raw){ sessWrap.style.display="none"; outBtn.disabled = true; return; }
-      try{
-        const s = JSON.parse(raw);
-        sessWrap.style.display="";
-        sessSite.textContent = s.siteName || SITE.name;
-        sessIn.textContent = pretty(s.clockIn);
-        sessOutRow.style.display = s.clockOut ? "" : "none";
-        sessDurRow.style.display = s.durationMin ? "" : "none";
-        if(s.clockOut) sessOut.textContent = pretty(s.clockOut);
-        if(s.durationMin){
-          const h = (s.durationMin/60);
-          sessDur.textContent = `${h.toFixed(2)} h (${Math.round(s.durationMin)} min)`;
-        }
-        const isOpen = !s.clockOut;
-        inBtn.disabled = !within || !isOpen ? !within : true;
-        outBtn.disabled = isOpen ? false : true;
-      }catch(e){
-        localStorage.removeItem("sess:open");
-        sessWrap.style.display="none";
-        outBtn.disabled = true;
+      const s = readSession();
+      if(!s){ sessWrap.style.display="none"; outBtn.disabled = true; return; }
+      sessWrap.style.display = "";
+      sessSite.textContent = s.siteName || SITE.name;
+      sessIn.textContent   = pretty(s.clockIn);
+      if (s.clockOut){
+        sessOutRow.style.display = "";
+        sessOut.textContent = pretty(s.clockOut);
+      } else {
+        sessOutRow.style.display = "none";
       }
-    }
-
-    function openSession(siteName){
-      const s = { siteName, clockIn: Date.now() };
-      localStorage.setItem("sess:open", JSON.stringify(s));
-      loadSession();
-    }
-    function closeSession(durationMin){
-      const raw = localStorage.getItem("sess:open");
-      if(!raw) return;
-      const s = JSON.parse(raw);
-      s.clockOut = Date.now();
-      if(durationMin) s.durationMin = durationMin;
-      localStorage.setItem("sess:open", JSON.stringify(s));
-      loadSession();
-    }
-
-    function updateGeoUI(pos){
-      const { latitude:lat, longitude:lng, accuracy } = pos.coords;
-      current = { lat, lng, accuracy };
-
-      const dist = haversineM(lat, lng, SITE.lat, SITE.lng);
-      const effective = Math.max(0, dist - accuracy);
-      within = effective <= SITE.radiusM;
-
-      statusEl.textContent = within ? "On site ✓" : "Outside geofence ✗";
-      statusEl.className = within ? "ok" : "err";
-      metaEl.textContent = `${SITE.name} • radius ${SITE.radiusM} m • you are ~${Math.round(dist)} m from center (accuracy ±${Math.round(accuracy)} m)`;
-
-      withinFlag.textContent = `Within radius: ${within ? "True" : "False"}`;
+      if (s.durationMin != null){
+        sessDurRow.style.display = "";
+        const h = s.durationMin / 60;
+        sessDur.textContent = `${h.toFixed(2)} h (${Math.round(s.durationMin)} min)`;
+      } else {
+        sessDurRow.style.display = "none";
+      }
       setButtons();
     }
 
+    function openSession(siteName){
+      writeSession({ siteName, clockIn: Date.now() });
+      loadSession();
+    }
+    function closeSession(durationMin){
+      const s = readSession(); if(!s) return;
+      s.clockOut = Date.now();
+      if(durationMin != null) s.durationMin = durationMin;
+      writeSession(s);
+      loadSession();
+    }
+
+    // ====== Geolocation ======
+    function updateGeoUI(pos){
+      const { latitude:lat, longitude:lng, accuracy } = pos.coords || {};
+      current = { lat, lng, accuracy };
+      refreshGeoMeta();
+    }
+    function onGeoError(){
+      statusEl.textContent = "Location unavailable";
+      statusEl.className   = "err";
+      within = false;
+      setButtons();
+    }
+
+    // ====== Buttons ======
     function setButtons(){
       const hasId = !!idEl.value.trim();
       const hasName = !!nameEl.value.trim();
-      const open = !!localStorage.getItem("sess:open") && !JSON.parse(localStorage.getItem("sess:open")).clockOut;
-      inBtn.disabled = !(within && hasId && hasName && current);
-      const onSiteGate = REQUIRE_ONSITE_TO_CHECKOUT ? within : true;
-      outBtn.disabled = !(open && onSiteGate && hasId && hasName && current);
+      const s = readSession();
+      const open = !!(s && !s.clockOut);
+      const onSiteOK = within && current;
+
+      inBtn.disabled = !(onSiteOK && hasId && hasName);
+      const onSiteGate = REQUIRE_ONSITE_TO_CHECKOUT ? onSiteOK : (!!current);
+      outBtn.disabled = !(open && onSiteGate && hasId && hasName);
     }
 
+    // ====== Networking ======
     async function ping(){
       try{ await fetch(buster(ENDPOINT), { method:"GET" }); }
       catch(e){ err("Cannot reach server."); }
@@ -220,50 +224,71 @@
 
     async function send(action){
       resultEl.textContent = "";
+
       const employeeId = idEl.value.trim().toUpperCase();
-      const name = nameEl.value.trim();
+      const name       = nameEl.value.trim();
       if(!employeeId || !name){ err("Enter ID and name."); return; }
       if(!current){ err("No location yet."); return; }
-      if(action==="checkin" && !within){ err("You must be on-site to check in."); return; }
-      if(action==="checkout" && REQUIRE_ONSITE_TO_CHECKOUT && !within){ err("You must be on-site to check out."); return; }
+      if(action==="checkin" && !within){ err(`You must be on-site (acc ≤ ${ACCURACY_MAX} m) to check in.`); return; }
+      if(action==="checkout" && REQUIRE_ONSITE_TO_CHECKOUT && !within){
+        err(`You must be on-site (acc ≤ ${ACCURACY_MAX} m) to check out.`); return;
+      }
       saveProfile();
 
-      const siteName = siteEl.value;
       const payload = {
         secret: SECRET, action,
-        employeeId, name, siteName,
+        employeeId, name, siteName: siteEl.value,
         lat: current.lat, lng: current.lng, accuracy: current.accuracy,
         radiusM: SITE.radiusM, userAgent: navigator.userAgent
       };
 
       try{
-        const r = await fetch(buster(ENDPOINT), { method:"POST", body: JSON.stringify(payload) });
+        const r = await fetch(buster(ENDPOINT), {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
+        });
         const data = await r.json();
         if(data.ok){
-          if(action==="checkin"){ openSession(siteEl.value); ok(`Checked in ✅  ${new Date().toLocaleString()}`); }
-          else { closeSession(data.durationMin); ok(`Checked out ✅  ${new Date().toLocaleString()} (${data.durationMin||0} min)`); }
-        } else err("Action failed: "+(data.error||"unknown"));
-      }catch(e){ err("Network error: "+e.message); }
-      finally{ setButtons(); }
+          if(action === "checkin"){
+            openSession(siteEl.value);
+            ok(`Checked in ✅  ${new Date().toLocaleString()}`);
+          }else{
+            closeSession(data.durationMin);
+            ok(`Checked out ✅  ${new Date().toLocaleString()} (${data.durationMin||0} min)`);
+          }
+        }else{
+          err("Action failed: " + (data.error || "unknown"));
+        }
+      }catch(e){
+        err("Network error: " + e.message);
+      }finally{
+        setButtons();
+      }
     }
 
-    inBtn.addEventListener("click", ()=>send("checkin"));
-    outBtn.addEventListener("click", ()=>send("checkout"));
-    idEl.addEventListener("input", setButtons);
+    // ====== Events ======
+    inBtn.addEventListener("click",  () => send("checkin"));
+    outBtn.addEventListener("click", () => send("checkout"));
+    idEl.addEventListener("input",   setButtons);
     nameEl.addEventListener("input", setButtons);
-    siteEl.addEventListener("change", ()=>{ saveProfile(); setSite(siteEl.value); });
+    siteEl.addEventListener("change", () => { saveProfile(); setSite(siteEl.value); });
 
+    // ====== Init ======
     (function init(){
       loadProfile();
       loadSession();
       setButtons();
-      if(siteEl && siteEl.value){ setSite(siteEl.value); }
       ping();
+
       if("geolocation" in navigator){
-        watchId = navigator.geolocation.watchPosition(updateGeoUI, ()=>{statusEl.textContent="Location unavailable";statusEl.className="err";within=false;setButtons();},{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+        navigator.geolocation.watchPosition(
+          updateGeoUI,
+          onGeoError,
+          { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+        );
       }else{
-        statusEl.textContent = "Geolocation not supported";
-        statusEl.className = "err";
+        onGeoError();
       }
     })();
   </script>
