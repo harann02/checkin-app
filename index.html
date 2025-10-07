@@ -55,7 +55,8 @@
       <div class="field">
         <label for="site">Site Location</label>
         <select id="site">
-          <option value="CDSB Office">CDSB Office</option>
+          <!-- ⬇⬇ names/values EXACTLY match backend -->
+          <option value="Labuan Office">Labuan Office</option>
           <option value="Lahad Datu Site">Lahad Datu Site</option>
           <option value="Sipitang Site">Sipitang Site</option>
         </select>
@@ -79,13 +80,13 @@
 
   <script>
     // ====== CONFIG ======
-    // Adjust these coords if needed
+    // Coordinates synced to backend SITES exactly
     const SITES = {
-      "CDSB Office":     { name: "CDSB Office",     lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
-      "Lahad Datu Site": { name: "Lahad Datu Site", lat: 5.027785331868045, lng: 118.3610085876295,  radiusM: 2000 },
-      "Sipitang Site":   { name: "Sipitang Site",   lat: 5.011133282563158, lng: 115.50520715008498, radiusM: 2000 }
+      "Labuan Office":  { name: "Labuan Office",  lat: 5.284357953275637, lng: 115.23158301414999,  radiusM: 2000 },
+      "Lahad Datu Site":{ name: "Lahad Datu Site",lat: 5.027785331868045, lng: 118.3610085876295,   radiusM: 2000 },
+      "Sipitang Site":  { name: "Sipitang Site",  lat: 5.011133282563158, lng: 115.50520715008498,  radiusM: 2000 }
     };
-    const ACCURACY_MAX = 120;               // require GPS accuracy ≤ this (meters) to be "on-site"
+    const ACCURACY_MAX = 120;               // require GPS accuracy ≤ this (m) to be "on-site"
     const REQUIRE_ONSITE_TO_CHECKOUT = true;
 
     // Your Apps Script endpoint + secret
@@ -102,7 +103,7 @@
           sessDur=$("#sessDur"), sessDurRow=$("#sessDurRow"),
           withinFlag=$("#withinFlag");
 
-    let SITE = SITES["CDSB Office"];
+    let SITE = SITES["Labuan Office"];
     let current = null; // {lat, lng, accuracy}
     let within = false;
 
@@ -119,7 +120,7 @@
     }
 
     function setSite(name){
-      SITE = SITES[name] || SITES["CDSB Office"];
+      SITE = SITES[name] || SITES["Labuan Office"];
       if (current) refreshGeoMeta();
     }
 
@@ -135,11 +136,36 @@
       setButtons();
     }
 
+    // ====== Device ID (enables backend device guard) ======
+    function getDeviceId() {
+      let id = localStorage.getItem("emp:deviceId");
+      if (!id) {
+        id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : 'dev-' + Math.random().toString(36).slice(2);
+        localStorage.setItem("emp:deviceId", id);
+      }
+      return id;
+    }
+
+    // ====== Friendly error messages ======
+    function explain(errCode){
+      const map = {
+        unauthorized: "App not authorized. Contact admin.",
+        unknown_site: "This site isn’t configured. Pick the correct site or call admin.",
+        not_within_geofence: "You’re outside the site radius. Move closer and try again.",
+        low_gps_accuracy: `GPS accuracy too low. Wait a moment or move outdoors.`,
+        duplicate_open_or_today: "You already have an open session today.",
+        no_open_session: "No open session found to check out.",
+        invalid_payload: "Missing required fields. Fill in ID/Name and try again.",
+        lock_timeout: "Server busy. Try again in a moment."
+      };
+      return map[errCode] || errCode || "unknown";
+    }
+
     // ====== Profile (local) ======
     function loadProfile(){
       idEl.value   = localStorage.getItem("emp:id")   || "";
       nameEl.value = localStorage.getItem("emp:name") || "";
-      siteEl.value = localStorage.getItem("emp:site") || "CDSB Office";
+      siteEl.value = localStorage.getItem("emp:site") || "Labuan Office";
       setSite(siteEl.value);
     }
     function saveProfile(){
@@ -239,7 +265,8 @@
         secret: SECRET, action,
         employeeId, name, siteName: siteEl.value,
         lat: current.lat, lng: current.lng, accuracy: current.accuracy,
-        radiusM: SITE.radiusM, userAgent: navigator.userAgent
+        radiusM: SITE.radiusM, userAgent: navigator.userAgent,
+        deviceId: getDeviceId()
       };
 
       try{
@@ -258,7 +285,7 @@
             ok(`Checked out ✅  ${new Date().toLocaleString()} (${data.durationMin||0} min)`);
           }
         }else{
-          err("Action failed: " + (data.error || "unknown"));
+          err("Action failed: " + explain(data.error));
         }
       }catch(e){
         err("Network error: " + e.message);
