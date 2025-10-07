@@ -87,7 +87,9 @@
     };
     const ACCURACY_MAX = 120;
     const REQUIRE_ONSITE_TO_CHECKOUT = true;
-    const ENDPOINT = "https://script.google.com/macros/s/AKfycbwXE_mPdjtnxj2W11p9jOo1jhlmocD2SmeNlLcUgKbOmzWXCzHHVegBMaWrsiadzMpy/exec?v=B12";
+
+    // ⚠️ Update this if you redeploy your Apps Script
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbwXE_mPdjtnxj2W11p9jOo1jhlmocD2SmeNlLcUgKbOmzWXCzHHVegBMaWrsiadzMpy/exec";
     const SECRET   = "Labu@n-2025-!";
 
     // ====== Helpers / DOM ======
@@ -101,13 +103,11 @@
           withinFlag=$("#withinFlag");
 
     let SITE=SITES["Labuan Office"];
-    let current=null;
-    let within=false;
+    let current=null, within=false;
     let geoWatchId=null, geoFirstCallback=false, geoGuardTimer=null;
 
     const toRad=d=>d*Math.PI/180;
     const pretty=ms=>new Date(ms).toLocaleString();
-    const buster=url=>url+(url.includes("?")?"&":"?")+"t="+Date.now();
     const ok=m=>{resultEl.className="small ok result";resultEl.textContent=m;};
     const err=m=>{resultEl.className="small err result";resultEl.textContent=m;};
 
@@ -146,7 +146,6 @@
         {enableHighAccuracy:true,timeout:10000,maximumAge:0}
       );
     }
-
     enableBtn.addEventListener("click",()=>startGeolocation(true));
 
     function updateGeoUI(pos){
@@ -196,8 +195,10 @@
     // ====== Device ID ======
     function getDeviceId(){
       let id=localStorage.getItem("emp:deviceId");
-      if(!id){id=crypto.randomUUID?crypto.randomUUID():"dev-"+Math.random().toString(36).slice(2);
-      localStorage.setItem("emp:deviceId",id);}
+      if(!id){
+        id=crypto.randomUUID?crypto.randomUUID():"dev-"+Math.random().toString(36).slice(2);
+        localStorage.setItem("emp:deviceId",id);
+      }
       return id;
     }
 
@@ -234,7 +235,7 @@
       outBtn.disabled=!(open&&onSiteGate&&hasId&&hasName);
     }
 
-    // ====== Networking ======
+    // ====== Friendly errors ======
     function explain(errCode){
       const map={
         unauthorized:"App not authorized. Contact admin.",
@@ -247,39 +248,67 @@
         device_already_used_today:"This device already has a check-in today.",
         no_open_session:"No open session found to check out.",
         invalid_payload:"Missing fields. Fill in ID/Name.",
+        lock_timeout:"Server busy. Try again in a moment."
       };
       return map[errCode]||errCode||"unknown";
     }
 
+    // ====== Network helpers ======
     async function ping(){
-      try{await fetch(buster(ENDPOINT),{method:"GET"});}catch{err("Cannot reach server.");}
+      try{
+        await fetch(ENDPOINT + (ENDPOINT.includes("?")?"&":"?") + "health=" + Date.now(), { method:"GET" });
+      }catch{err("Cannot reach server.");}
     }
 
     async function send(action){
       resultEl.textContent="";
-      const employeeId=idEl.value.trim().toUpperCase(),name=nameEl.value.trim();
+      const employeeId=idEl.value.trim().toUpperCase();
+      const name=nameEl.value.trim();
       if(!employeeId||!name){err("Enter ID and name.");return;}
       if(!current){err("No location yet.");return;}
       if(action==="checkin"&&!within){err(`You must be on-site (acc ≤ ${ACCURACY_MAX} m) to check in.`);return;}
       if(action==="checkout"&&REQUIRE_ONSITE_TO_CHECKOUT&&!within){err(`You must be on-site to check out.`);return;}
       saveProfile();
 
-      const payload={secret:SECRET,action,employeeId,name,siteName:siteEl.value,
+      const payload={
+        secret:SECRET,action,
+        employeeId,name,siteName:siteEl.value,
         lat:current.lat,lng:current.lng,accuracy:current.accuracy,
-        radiusM:SITE.radiusM,userAgent:navigator.userAgent,deviceId:getDeviceId()};
+        radiusM:SITE.radiusM,userAgent:navigator.userAgent,
+        deviceId:getDeviceId()
+      };
 
       try{
-        const r=await fetch(buster(ENDPOINT),{
-          method:"POST",
-          headers:{"Content-Type":"text/plain;charset=utf-8"},
-          body:JSON.stringify(payload)
+        const url = ENDPOINT + (ENDPOINT.includes("?") ? "&" : "?") + "t=" + Date.now(); // cache-bust safely
+        const r = await fetch(url, {
+          method: "POST",
+          mode: "cors",
+          redirect: "follow",
+          headers: { "Content-Type": "text/plain;charset=utf-8" }, // simple request (no preflight)
+          body: JSON.stringify(payload),
         });
-        const data=await r.json();
-        if(data.ok){
-          if(action==="checkin"){openSession(siteEl.value);ok(`Checked in ✅ ${new Date().toLocaleString()}`);}
-          else{closeSession(data.durationMin);ok(`Checked out ✅ ${new Date().toLocaleString()} (${data.durationMin||0} min)`);}
-        }else{err("Action failed: "+explain(data.error));}
-      }catch(e){err("Network error: "+e.message);}finally{setButtons();}
+
+        const text = await r.text(); // robust on mobile
+        let data;
+        try { data = JSON.parse(text); }
+        catch { data = { ok:false, error: text.slice(0,120) || "non_json_response" }; }
+
+        if (data.ok) {
+          if (action === "checkin") {
+            openSession(siteEl.value);
+            ok(`Checked in ✅ ${new Date().toLocaleString()}`);
+          } else {
+            closeSession(data.durationMin);
+            ok(`Checked out ✅ ${new Date().toLocaleString()} (${data.durationMin || 0} min)`);
+          }
+        } else {
+          err("Action failed: " + explain(data.error));
+        }
+      } catch(e){
+        err("Network error: " + e.message);
+      } finally {
+        setButtons();
+      }
     }
 
     inBtn.addEventListener("click",()=>send("checkin"));
@@ -291,7 +320,7 @@
     // ====== Init ======
     (function init(){
       loadProfile();loadSession();setButtons();ping();
-      startGeolocation(); // new improved geolocation
+      startGeolocation(); // improved geolocation flow
     })();
   </script>
 </body>
