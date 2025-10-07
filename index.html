@@ -157,6 +157,9 @@
         no_open_session: "No open session found to check out.",
         invalid_payload: "Missing required fields. Fill in ID/Name and try again.",
         lock_timeout: "Server busy. Try again in a moment."
+        already_open_session: "You already have an open session.",
+        already_checked_in_today: "You’ve already checked in today. Only one check-in is allowed per day.",
+        device_already_used_today: "This device already has a check-in today."
       };
       return map[errCode] || errCode || "unknown";
     }
