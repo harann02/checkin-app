@@ -6,11 +6,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const ENDPOINT = process.env.APPS_SCRIPT_ENDPOINT;  // your Google Apps Script URL
-    const ADMIN_TOKEN = process.env.ADMIN_TOKEN;        // secret token
+  const ENDPOINT = process.env.APPS_SCRIPT_ENDPOINT;
+  const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+  console.log('DEBUG ENV:', { ENDPOINT, ADMIN_TOKEN: ADMIN_TOKEN ? 'exists' : 'missing' });
 
-    if (!ENDPOINT) throw new Error('Missing APPS_SCRIPT_ENDPOINT');
-
+  if (!ENDPOINT) throw new Error('Missing APPS_SCRIPT_ENDPOINT');
+  ...
+} catch (err) {
+  console.error('ADMIN-SITES ERROR:', err);
+  return res.status(500).json({ ok: false, error: String(err) });
+}
     let body = {};
     if (req.method === 'GET') {
       body = { adminAction: 'listSites', adminToken: ADMIN_TOKEN };
