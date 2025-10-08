@@ -165,88 +165,159 @@
 
   <footer>© 2025 Cahaya Dedikasi Sdn. Bhd. — Daily Attendance System</footer>
 
-  <script>
-    let map, selectedMarker;
-    const API_URL = '/api/admin-sites'; // your endpoint
+<script>
+  let map, selectedMarker, radiusCircle;
+  const API_URL = '/api/admin-sites'; // your backend endpoint
 
-    async function initMap() {
-      const res = await fetch(API_URL);
-      const data = await res.json();
+  async function initMap() {
+    const res = await fetch(API_URL);
+    const data = await res.json();
 
-      map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 5.3, lng: 115.25 },
-        zoom: 7,
-      });
-
-      const sites = data.sites || [];
-      const list = document.getElementById("sitesContainer");
-      list.innerHTML = '';
-
-      sites.forEach(site => {
-        const marker = new google.maps.Marker({
-          position: { lat: site.lat, lng: site.lng },
-          map,
-          title: site.siteName,
-        });
-        marker.siteData = site;
-        marker.addListener("click", () => {
-          selectSite(marker);
-        });
-
-        // Add to sidebar list
-        const div = document.createElement("div");
-        div.className = "site-item";
-        div.textContent = site.siteName;
-        div.onclick = () => {
-          map.panTo(marker.getPosition());
-          map.setZoom(12);
-          selectSite(marker);
-        };
-        list.appendChild(div);
-      });
-
-      map.addListener("click", (e) => {
-        if (selectedMarker) selectedMarker.setMap(null);
-        selectedMarker = new google.maps.Marker({
-          position: e.latLng,
-          map,
-          draggable: true,
-          title: "New Site",
-        });
-        document.getElementById("siteName").value = "";
-        document.getElementById("radiusM").value = 2000;
-      });
-    }
-
-    function selectSite(marker) {
-      selectedMarker = marker;
-      document.getElementById("siteName").value = marker.siteData.siteName;
-      document.getElementById("radiusM").value = marker.siteData.radiusM;
-    }
-
-    document.getElementById("saveBtn").addEventListener("click", async () => {
-      if (!selectedMarker) return alert("Select or add a site first.");
-      const siteName = document.getElementById("siteName").value.trim();
-      const radiusM = parseInt(document.getElementById("radiusM").value) || 2000;
-
-      selectedMarker.siteData = {
-        siteName,
-        lat: selectedMarker.getPosition().lat(),
-        lng: selectedMarker.getPosition().lng(),
-        radiusM,
-      };
-
-      const body = { action: "saveSite", site: selectedMarker.siteData };
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const result = await res.json();
-      alert(result.ok ? "✅ Site saved successfully!" : "❌ Failed to save site.");
-      location.reload();
+    map = new google.maps.Map(document.getElementById("map"), {
+      center: { lat: 5.3, lng: 115.25 },
+      zoom: 7,
+      mapTypeControl: true,
+      streetViewControl: false
     });
-  </script>
+
+    const sites = data.sites || [];
+    const list = document.getElementById("sitesContainer");
+    list.innerHTML = '';
+
+    sites.forEach(site => {
+      const marker = new google.maps.Marker({
+        position: { lat: site.lat, lng: site.lng },
+        map,
+        title: site.siteName,
+      });
+      marker.siteData = site;
+      marker.addListener("click", () => selectSite(marker));
+
+      // Add site name to sidebar list
+      const div = document.createElement("div");
+      div.className = "site-item";
+      div.textContent = site.siteName;
+      div.onclick = () => {
+        map.panTo(marker.getPosition());
+        map.setZoom(12);
+        selectSite(marker);
+      };
+      list.appendChild(div);
+    });
+
+    // Add new marker by clicking the map
+    map.addListener("click", (e) => {
+      if (selectedMarker) selectedMarker.setMap(null);
+      if (radiusCircle) radiusCircle.setMap(null);
+
+      selectedMarker = new google.maps.Marker({
+        position: e.latLng,
+        map,
+        draggable: true,
+        title: "New Site",
+      });
+
+      document.getElementById("siteName").value = "";
+      document.getElementById("radiusM").value = 2000;
+
+      drawRadius(e.latLng, 2000);
+
+      selectedMarker.addListener("drag", () => {
+        if (radiusCircle) {
+          radiusCircle.setCenter(selectedMarker.getPosition());
+        }
+      });
+    });
+  }
+
+  function selectSite(marker) {
+    selectedMarker = marker;
+    const site = marker.siteData;
+    document.getElementById("siteName").value = site.siteName;
+    document.getElementById("radiusM").value = site.radiusM;
+    map.panTo(marker.getPosition());
+    drawRadius(marker.getPosition(), site.radiusM);
+  }
+
+  function drawRadius(center, radiusM) {
+    if (radiusCircle) radiusCircle.setMap(null);
+    radiusCircle = new google.maps.Circle({
+      strokeColor: "#0b9df0",
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      fillColor: "#0b9df0",
+      fillOpacity: 0.15,
+      map,
+      center,
+      radius: radiusM
+    });
+  }
+
+  document.getElementById("radiusM").addEventListener("input", (e) => {
+    const val = parseInt(e.target.value) || 0;
+    if (selectedMarker && val > 0) {
+      drawRadius(selectedMarker.getPosition(), val);
+    }
+  });
+
+  // ✅ Save Site
+  document.getElementById("saveBtn").addEventListener("click", async () => {
+    if (!selectedMarker) return alert("Select or add a site first.");
+
+    const siteName = document.getElementById("siteName").value.trim();
+    const radiusM = parseInt(document.getElementById("radiusM").value) || 2000;
+
+    selectedMarker.siteData = {
+      siteName,
+      lat: selectedMarker.getPosition().lat(),
+      lng: selectedMarker.getPosition().lng(),
+      radiusM,
+    };
+
+    const body = { action: "saveSite", site: selectedMarker.siteData };
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await res.json();
+    alert(result.ok ? "✅ Site saved successfully!" : "❌ Failed to save site.");
+    location.reload();
+  });
+
+  // 🗑 Delete Site
+  async function deleteSite() {
+    if (!selectedMarker || !selectedMarker.siteData) {
+      alert("Select a site first to delete.");
+      return;
+    }
+    if (!confirm(`Are you sure you want to delete "${selectedMarker.siteData.siteName}"?`)) return;
+
+    const body = { action: "deleteSite", siteName: selectedMarker.siteData.siteName };
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await res.json();
+    alert(result.ok ? "🗑 Site deleted successfully!" : "❌ Failed to delete site.");
+    location.reload();
+  }
+
+  // 🧱 Add delete button dynamically
+  const delBtn = document.createElement("button");
+  delBtn.textContent = "🗑 Delete Site";
+  delBtn.style.background = "#c53030";
+  delBtn.style.marginTop = "8px";
+  delBtn.style.border = "none";
+  delBtn.style.color = "white";
+  delBtn.style.padding = "10px";
+  delBtn.style.borderRadius = "6px";
+  delBtn.style.cursor = "pointer";
+  delBtn.onclick = deleteSite;
+  document.querySelector("aside").appendChild(delBtn);
+</script>
+
 
   <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB-JiJEoRcMZrt4NdIZMT92S5aYFSWAc9E&callback=initMap"></script>
 </body>
