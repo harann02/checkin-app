@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Site Management</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    #map { height: 100vh; width: 100%; }
+    .control-panel {
+      position: absolute; top: 10px; left: 10px; background: white; padding: 10px;
+      border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); z-index: 10;
+    }
+    .control-panel input, .control-panel button { width: 100%; margin-top: 5px; padding: 6px; }
+  </style>
+</head>
+<body>
+  <div class="control-panel">
+    <h3>Manage Sites</h3>
+    <input id="siteName" placeholder="Site Name" />
+    <input id="radiusM" type="number" placeholder="Radius (meters)" />
+    <button id="saveBtn">💾 Save / Update Site</button>
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    let map, markers = [], selectedMarker = null;
+    const API_URL = '/api/admin-sites';
+    const ADMIN_TOKEN = 'CHANGE_ME_admin_2025'; // same as your env token
+
+    async function fetchSites() {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      return data.sites || [];
+    }
+
+    async function initMap() {
+      const sites = await fetchSites();
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 5.2843, lng: 115.2315 }, zoom: 8
+      });
+
+      // Load existing sites
+      sites.forEach(site => addMarker(site));
+
+      // Add marker on click
+      map.addListener('click', e => {
+        const newSite = { siteName: 'New Site', lat: e.latLng.lat(), lng: e.latLng.lng(), radiusM: 2000 };
+        selectedMarker = addMarker(newSite, true);
+        updateForm(newSite);
+      });
+    }
+
+    function addMarker(site, isNew = false) {
+      const marker = new google.maps.Marker({
+        position: { lat: site.lat, lng: site.lng },
+        map, draggable: true, title: site.siteName
+      });
+      marker.siteData = site;
+
+      marker.addListener('click', () => {
+        selectedMarker = marker;
+        updateForm(marker.siteData);
+      });
+
+      marker.addListener('dragend', e => {
+        marker.siteData.lat = e.latLng.lat();
+        marker.siteData.lng = e.latLng.lng();
+      });
+
+      markers.push(marker);
+      return marker;
+    }
+
+    function updateForm(site) {
+      document.getElementById('siteName').value = site.siteName || '';
+      document.getElementById('radiusM').value = site.radiusM || 2000;
+    }
+
+    async function saveSite() {
+      if (!selectedMarker) return alert('Select or add a site first');
+      const siteName = document.getElementById('siteName').value.trim();
+      const radiusM = parseInt(document.getElementById('radiusM').value) || 2000;
+
+      selectedMarker.siteData.siteName = siteName;
+      selectedMarker.siteData.radiusM = radiusM;
+
+      const body = { action: 'saveSite', adminToken: ADMIN_TOKEN, site: selectedMarker.siteData };
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      alert(data.ok ? '✅ Site saved successfully!' : '❌ Error saving site.');
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', saveSite);
+  </script>
+
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB-JiJEoRcMZrt4NdIZMT92S5aYFSWAc9E"></script>
+</body>
+</html>
