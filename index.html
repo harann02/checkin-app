@@ -75,28 +75,33 @@
 
     <div id="result" class="small result mt12"></div>
     <div id="gpsdbg" class="gpsdbg"></div>
-    <div class="build">Build: Front-B14-geo-hardening</div>
+    <div class="build" id="build">Build: Front-B15-cors-retry</div>
   </div>
 
   <script>
     // ====== CONFIG ======
+    // IMPORTANT: keep SITES aligned with your Apps Script Sites sheet.
     const SITES = {
-      "Labuan Office":  { name: "Labuan Office",  lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
-      "PML Site":        { name: "PML Site",       lat: 5.2461798286112575, lng: 115.23901767166406, radiusM: 1000 },
-      "Lahad Datu Site":{ name: "Lahad Datu Site",lat: 5.027785331868045, lng: 118.3610085876295,  radiusM: 2000 },
-      "Sipitang Site":  { name: "Sipitang Site",  lat: 5.011133282563158,  lng: 115.50520715008498, radiusM: 2000 }
+      "Labuan Office":   { name: "Labuan Office",   lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
+      "PML Site":        { name: "PML Site",        lat: 5.2461798286112575, lng: 115.23901767166406, radiusM: 1000 },
+      "Lahad Datu Site": { name: "Lahad Datu Site", lat: 5.027785331868045,  lng: 118.3610085876295,  radiusM: 2000 },
+      "Sipitang Site":   { name: "Sipitang Site",   lat: 5.011133282563158,  lng: 115.50520715008498, radiusM: 2000 }
     };
-    const ACCURACY_MAX_IN  = 120; // strict for check-in (mobile)
-    const ACCURACY_MAX_OUT = 800; // looser for check-out (desktop wifi/IP)
+
+    // Strict for check-in (mobile GPS); looser for checkout (desktop/WiFi)
+    const ACCURACY_MAX_IN  = 120;
+    const ACCURACY_MAX_OUT = 800;
     const REQUIRE_ONSITE_TO_CHECKOUT = true;
 
-    // ⚠️ Update if you redeploy Apps Script (we'll harden server next)
-    const ENDPOINT = "https://script.google.com/macros/s/AKfycbxv5nUjRYyF7uQTPGboA9xrsVFbc5qN5mYYI_qkZaU9EZbMMJtn3pvBVNeLf8rn9veq/exec?v=2025-10-14";
-    const SECRET   = "Labu@n-2025-!"; // visible in client; server must verify Origin and do server-side geofence
+    // Default Apps Script endpoint (override with ?endpoint=... for quick swaps)
+    const DEFAULT_ENDPOINT = "https://script.google.com/macros/s/AKfycbxv5nUjRYyF7uQTPGboA9xrsVFbc5qN5mYYI_qkZaU9EZbMMJtn3pvBVNeLf8rn9veq/exec";
+    const SECRET   = "Labu@n-2025-!"; // server checks this
+    const qs = new URLSearchParams(location.search);
+    const ENDPOINT = (qs.get("endpoint") || DEFAULT_ENDPOINT).trim();
 
     // ====== Helpers / DOM ======
     const $ = s => document.querySelector(s);
-    const statusEl=$("#status"), metaEl=$("#meta"), resultEl=$("#result"), gpsdbgEl=$("#gpsdbg");
+    const statusEl=$("#status"), metaEl=$("#meta"), resultEl=$("#result"), gpsdbgEl=$("#gpsdbg"), buildEl=$("#build");
     const inBtn=$("#checkinBtn"), outBtn=$("#checkoutBtn"), enableBtn=$("#enableLocBtn");
     const idEl=$("#employeeId"), nameEl=$("#name"), siteEl=$("#site");
     const sessWrap=$("#session"), sessSite=$("#sessSite"), sessIn=$("#sessIn"),
@@ -105,7 +110,7 @@
           withinFlag=$("#withinFlag");
 
     let SITE; // selected site object
-    let current=null, distM=null; // current GPS + computed distance
+    let current=null, distM=null;
     let geoWatchId=null, geoFirstCallback=false, geoGuardTimer=null;
 
     const toRad=d=>d*Math.PI/180;
@@ -113,7 +118,7 @@
     const ok=m=>{resultEl.className="small ok result";resultEl.textContent=m;};
     const err=m=>{resultEl.className="small err result";resultEl.textContent=m;};
 
-    // ====== Geolocation logic ======
+    // ====== Geolocation ======
     function showEnableUI(msg){
       statusEl.textContent=msg||"Location blocked. Tap Enable and allow access.";
       statusEl.className="err";
@@ -131,8 +136,7 @@
       geoGuardTimer=setTimeout(()=>{ if(!geoFirstCallback){showEnableUI("Still waiting for location… Tap Enable and allow access.");}},8000);
 
       navigator.geolocation.getCurrentPosition(
-        pos=>{
-          geoFirstCallback=true; updateGeoUI(pos);
+        pos=>{ geoFirstCallback=true; updateGeoUI(pos);
           if(geoGuardTimer){clearTimeout(geoGuardTimer);geoGuardTimer=null;}
           geoWatchId=navigator.geolocation.watchPosition(updateGeoUI,onGeoError,{enableHighAccuracy:true,timeout:15000,maximumAge:0});
         },
@@ -142,7 +146,7 @@
     }
     enableBtn.addEventListener("click",()=>startGeolocation());
 
-    // Nice UX on browsers that expose permission API
+    // Permission hint (Safari shows denied separately)
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "geolocation" }).then(p => {
         if (p.state === "denied") showEnableUI("Location is blocked in browser settings. Tap Enable after allowing.");
@@ -171,8 +175,7 @@
     function withinFor(action){
       if(!current || !SITE) return false;
       const limit = action === 'checkin' ? ACCURACY_MAX_IN : ACCURACY_MAX_OUT;
-      const inside = (distM <= SITE.radiusM) && (current.accuracy <= limit);
-      return inside;
+      return (distM <= SITE.radiusM) && (current.accuracy <= limit);
     }
 
     function refreshGeoMeta(){
@@ -187,7 +190,7 @@
       setButtons();
     }
 
-    // ====== Profile storage ======
+    // ====== Profile / session ======
     function loadProfile(){
       idEl.value=localStorage.getItem("emp:id")||"";
       nameEl.value=localStorage.getItem("emp:name")||"";
@@ -210,21 +213,18 @@
       siteEl.innerHTML=""; siteEl.appendChild(frag);
     }
 
-    // ====== Device ID ======
     function getDeviceId(){
       let id=localStorage.getItem("emp:deviceId");
       if(!id){ id=crypto.randomUUID?crypto.randomUUID():"dev-"+Math.random().toString(36).slice(2); localStorage.setItem("emp:deviceId",id); }
       return id;
     }
 
-    // ====== Session handling ======
     const dayKey = ms=>{const d=new Date(ms);return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`};
     function readSession(){ try{return JSON.parse(localStorage.getItem("sess:open")||"null");}catch{return null;} }
     function writeSession(s){ localStorage.setItem("sess:open",JSON.stringify(s)); }
     function clearSession(){ localStorage.removeItem("sess:open"); }
     function loadSession(){
       const s=readSession();
-      // auto-clear if day rolled over
       if (s && s.day && s.day !== dayKey(Date.now())) { clearSession(); return loadSession(); }
       if(!s){ sessWrap.style.display="none"; outBtn.disabled=true; return; }
       sessWrap.style.display="";
@@ -237,7 +237,6 @@
     function openSession(siteName){ writeSession({siteName,clockIn:Date.now(),day:dayKey(Date.now())}); loadSession(); }
     function closeSession(durationMin){ const s=readSession(); if(!s) return; s.clockOut=Date.now(); if(durationMin!=null) s.durationMin=durationMin; writeSession(s); loadSession(); }
 
-    // ====== Buttons ======
     function setButtons(){
       const hasId=!!idEl.value.trim(), hasName=!!nameEl.value.trim();
       const s=readSession(), open=!!(s && !s.clockOut);
@@ -248,7 +247,6 @@
       outBtn.disabled = !canOut;
     }
 
-    // ====== Friendly errors ======
     function explain(errCode){
       const map={
         unauthorized:"App not authorized. Contact admin.",
@@ -266,10 +264,45 @@
       return map[errCode]||errCode||"unknown";
     }
 
-    // ====== Network helpers ======
+    // ====== NETWORK (time-out + retries; no explicit mode/redirect) ======
+    function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+    async function fetchWithTimeout(url, options={}, ms=12000){
+      const ctrl = new AbortController();
+      const id = setTimeout(()=>ctrl.abort(), ms);
+      try{
+        const r = await fetch(url, { ...options, signal: ctrl.signal, cache: "no-store" });
+        return r;
+      } finally { clearTimeout(id); }
+    }
+    async function postJson(url, body, tries=2){
+      let lastErr;
+      for(let i=0;i<tries;i++){
+        try{
+          const r = await fetchWithTimeout(url, {
+            method:"POST",
+            headers:{ "Content-Type":"text/plain;charset=utf-8" },
+            body: JSON.stringify(body)
+          });
+          const text = await r.text();
+          let data; try { data = JSON.parse(text); } catch { data = { ok:false, error:"non_json_response", raw:text.slice(0,120) }; }
+          if (!r.ok) throw new Error(data && data.error ? data.error : `http_${r.status}`);
+          return data;
+        }catch(e){
+          lastErr = e;
+          if (i < tries-1) await sleep(400 + i*600);
+        }
+      }
+      throw lastErr || new Error("network_error");
+    }
+
     async function ping(){
-      try{ await fetch(ENDPOINT + (ENDPOINT.includes("?")?"&":"?") + "health=" + Date.now(), { method:"GET" }); }
-      catch{ err("Cannot reach server."); }
+      try{
+        const h = ENDPOINT + (ENDPOINT.includes("?")?"&":"?") + "health=" + Date.now();
+        await fetchWithTimeout(h,{ method:"GET" }, 6000);
+        buildEl.textContent = `Build: Front-B15-cors-retry • Endpoint OK`;
+      }catch{
+        buildEl.textContent = `Build: Front-B15-cors-retry • Endpoint unreachable`;
+      }
     }
 
     async function send(action){
@@ -287,30 +320,31 @@
       }
       saveProfile();
 
-      // guard: disable during network to prevent double submits
       inBtn.disabled = true; outBtn.disabled = true; enableBtn.disabled = true;
 
       const payload={
         secret:SECRET, action,
         employeeId, name, siteName:siteEl.value,
         lat:current.lat, lng:current.lng, accuracy:current.accuracy,
-        // radiusM intentionally NOT sent; server must own geofence values
         userAgent:navigator.userAgent, deviceId:getDeviceId()
       };
 
       try{
         const url = ENDPOINT + (ENDPOINT.includes("?") ? "&" : "?") + "t=" + Date.now();
-        const r = await fetch(url, { method: "POST", mode: "cors", redirect: "follow", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
-
-        const text = await r.text();
-        let data; try { data = JSON.parse(text); } catch { data = { ok:false, error: text.slice(0,120) || "non_json_response" }; }
+        const data = await postJson(url, payload, 2);
 
         if (data.ok) {
           if (action === "checkin") { openSession(siteEl.value); ok(`Checked in ✅ ${pretty(Date.now())}`); }
           else { closeSession(data.durationMin); ok(`Checked out ✅ ${pretty(Date.now())} (${data.durationMin || 0} min)`); }
-        } else { err("Action failed: " + explain(data.error)); }
-      } catch(e){ err("Network error: " + e.message); }
-      finally { setButtons(); enableBtn.disabled=false; }
+        } else {
+          err("Action failed: " + explain(data.error));
+        }
+      } catch(e){
+        // This is the one that previously printed "Load failed" on Safari
+        err("Network error: " + (e && e.message ? e.message : "Load failed"));
+      } finally {
+        setButtons(); enableBtn.disabled=false;
+      }
     }
 
     inBtn.addEventListener("click",()=>send("checkin"));
