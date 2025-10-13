@@ -30,6 +30,8 @@
     .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #e6ebf2}
     .kv:last-child{border-bottom:0}
     .footnote{margin-top:8px;font-size:.85rem}
+    .build{margin-top:10px;text-align:center;font-size:.8rem;color:var(--muted)}
+    .gpsdbg{margin-top:8px;text-align:center;font-size:.8rem;color:#6b7280}
   </style>
 </head>
 <body>
@@ -54,12 +56,7 @@
 
       <div class="field">
         <label for="site">Site Location</label>
-        <select id="site">
-          <option value="Labuan Office">Labuan Office</option>
-          <option value="PML Site">PML Site</option>
-          <option value="Lahad Datu Site">Lahad Datu Site</option>
-          <option value="Sipitang Site">Sipitang Site</option>
-        </select>
+        <select id="site"></select>
       </div>
     </div>
 
@@ -77,26 +74,29 @@
     </div>
 
     <div id="result" class="small result mt12"></div>
+    <div id="gpsdbg" class="gpsdbg"></div>
+    <div class="build">Build: Front-B14-geo-hardening</div>
   </div>
 
   <script>
     // ====== CONFIG ======
     const SITES = {
       "Labuan Office":  { name: "Labuan Office",  lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
-      "PML Site":  { name: "PML Site",  lat: 5.2461798286112575, lng: 115.23901767166406, radiusM: 1000 },
-      "Lahad Datu Site":{ name: "Lahad Datu Site",lat: 5.027785331868045, lng: 118.3610085876295, radiusM: 2000 },
-      "Sipitang Site":  { name: "Sipitang Site",  lat: 5.011133282563158, lng: 115.50520715008498, radiusM: 2000 }
+      "PML Site":        { name: "PML Site",       lat: 5.2461798286112575, lng: 115.23901767166406, radiusM: 1000 },
+      "Lahad Datu Site":{ name: "Lahad Datu Site",lat: 5.027785331868045, lng: 118.3610085876295,  radiusM: 2000 },
+      "Sipitang Site":  { name: "Sipitang Site",  lat: 5.011133282563158,  lng: 115.50520715008498, radiusM: 2000 }
     };
-    const ACCURACY_MAX = 120;
+    const ACCURACY_MAX_IN  = 120; // strict for check-in (mobile)
+    const ACCURACY_MAX_OUT = 800; // looser for check-out (desktop wifi/IP)
     const REQUIRE_ONSITE_TO_CHECKOUT = true;
 
-    // ⚠️ Update this if you redeploy your Apps Script
+    // ⚠️ Update if you redeploy Apps Script (we'll harden server next)
     const ENDPOINT = "https://script.google.com/macros/s/AKfycbwXE_mPdjtnxj2W11p9jOo1jhlmocD2SmeNlLcUgKbOmzWXCzHHVegBMaWrsiadzMpy/exec";
-    const SECRET   = "Labu@n-2025-!";
+    const SECRET   = "Labu@n-2025-!"; // visible in client; server must verify Origin and do server-side geofence
 
     // ====== Helpers / DOM ======
     const $ = s => document.querySelector(s);
-    const statusEl=$("#status"), metaEl=$("#meta"), resultEl=$("#result");
+    const statusEl=$("#status"), metaEl=$("#meta"), resultEl=$("#result"), gpsdbgEl=$("#gpsdbg");
     const inBtn=$("#checkinBtn"), outBtn=$("#checkoutBtn"), enableBtn=$("#enableLocBtn");
     const idEl=$("#employeeId"), nameEl=$("#name"), siteEl=$("#site");
     const sessWrap=$("#session"), sessSite=$("#sessSite"), sessIn=$("#sessIn"),
@@ -104,12 +104,12 @@
           sessDur=$("#sessDur"), sessDurRow=$("#sessDurRow"),
           withinFlag=$("#withinFlag");
 
-    let SITE=SITES["Labuan Office"];
-    let current=null, within=false;
+    let SITE; // selected site object
+    let current=null, distM=null; // current GPS + computed distance
     let geoWatchId=null, geoFirstCallback=false, geoGuardTimer=null;
 
     const toRad=d=>d*Math.PI/180;
-    const pretty=ms=>new Date(ms).toLocaleString();
+    const pretty=ms=> new Intl.DateTimeFormat("en-MY",{timeZone:"Asia/Kuching",year:"numeric",month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit"}).format(ms);
     const ok=m=>{resultEl.className="small ok result";resultEl.textContent=m;};
     const err=m=>{resultEl.className="small err result";resultEl.textContent=m;};
 
@@ -122,33 +122,32 @@
     }
     function hideEnableUI(){enableBtn.style.display="none";}
 
-    function startGeolocation(userInitiated=false){
+    function startGeolocation(){
       if(!("geolocation" in navigator)){onGeoError();return;}
       if(geoWatchId!==null){navigator.geolocation.clearWatch(geoWatchId);geoWatchId=null;}
       if(geoGuardTimer){clearTimeout(geoGuardTimer);geoGuardTimer=null;}
-      geoFirstCallback=false;
-      hideEnableUI();
+      geoFirstCallback=false; hideEnableUI();
 
-      geoGuardTimer=setTimeout(()=>{
-        if(!geoFirstCallback){showEnableUI("Still waiting for location… Tap Enable and allow access.");}
-      },8000);
+      geoGuardTimer=setTimeout(()=>{ if(!geoFirstCallback){showEnableUI("Still waiting for location… Tap Enable and allow access.");}},8000);
 
       navigator.geolocation.getCurrentPosition(
         pos=>{
-          geoFirstCallback=true;
-          updateGeoUI(pos);
+          geoFirstCallback=true; updateGeoUI(pos);
           if(geoGuardTimer){clearTimeout(geoGuardTimer);geoGuardTimer=null;}
-          geoWatchId=navigator.geolocation.watchPosition(
-            updateGeoUI,onGeoError,{enableHighAccuracy:true,timeout:15000,maximumAge:0}
-          );
+          geoWatchId=navigator.geolocation.watchPosition(updateGeoUI,onGeoError,{enableHighAccuracy:true,timeout:15000,maximumAge:0});
         },
-        e=>{
-          showEnableUI(e.code===1?"Location permission denied. Tap Enable and choose Allow.":"Location unavailable. Tap Enable to try again.");
-        },
+        e=>{ showEnableUI(e.code===1?"Location permission denied. Tap Enable and choose Allow.":"Location unavailable. Tap Enable to try again."); },
         {enableHighAccuracy:true,timeout:10000,maximumAge:0}
       );
     }
-    enableBtn.addEventListener("click",()=>startGeolocation(true));
+    enableBtn.addEventListener("click",()=>startGeolocation());
+
+    // Nice UX on browsers that expose permission API
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "geolocation" }).then(p => {
+        if (p.state === "denied") showEnableUI("Location is blocked in browser settings. Tap Enable after allowing.");
+      }).catch(()=>{});
+    }
 
     function updateGeoUI(pos){
       const {latitude:lat,longitude:lng,accuracy}=pos.coords||{};
@@ -158,8 +157,7 @@
     function onGeoError(){
       statusEl.textContent="Location unavailable";
       statusEl.className="err";
-      within=false;
-      setButtons();
+      distM=null; setButtons();
     }
 
     // ====== Computation ======
@@ -168,16 +166,24 @@
       const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
       return 2*R*Math.asin(Math.sqrt(a));
     }
-    function setSite(name){SITE=SITES[name]||SITES["Labuan Office"];if(current)refreshGeoMeta();}
+    function setSite(name){ SITE = SITES[name] || SITES[Object.keys(SITES)[0]]; if(current) refreshGeoMeta(); }
+
+    function withinFor(action){
+      if(!current || !SITE) return false;
+      const limit = action === 'checkin' ? ACCURACY_MAX_IN : ACCURACY_MAX_OUT;
+      const inside = (distM <= SITE.radiusM) && (current.accuracy <= limit);
+      return inside;
+    }
+
     function refreshGeoMeta(){
-      const {lat,lng,accuracy}=current||{};
-      if(lat==null)return;
-      const dist=haversineM(lat,lng,SITE.lat,SITE.lng);
-      within=(dist<=SITE.radiusM)&&(accuracy<=ACCURACY_MAX);
-      statusEl.textContent=within?"On site ✓":"Outside geofence ✗";
-      statusEl.className=within?"ok":"err";
-      metaEl.textContent=`${SITE.name} • radius ${SITE.radiusM} m • you are ~${Math.round(dist)} m from center (±${Math.round(accuracy)} m)`;
-      withinFlag.textContent=`Within radius: ${within ? "True" : "False"} (acc ≤ ${ACCURACY_MAX} m)`;
+      const {lat,lng,accuracy}=current||{}; if(lat==null){return;}
+      distM = haversineM(lat,lng,SITE.lat,SITE.lng);
+      const onIn = withinFor('checkin');
+      statusEl.textContent = onIn?"On site ✓":"Outside geofence ✗";
+      statusEl.className = onIn?"ok":"err";
+      metaEl.textContent = `${SITE.name} • radius ${SITE.radiusM} m • you are ~${Math.round(distM)} m from center (±${Math.round(accuracy)} m)`;
+      withinFlag.textContent = `Within radius (check-in rules): ${onIn ? "True" : "False"} (acc ≤ ${ACCURACY_MAX_IN} m)`;
+      gpsdbgEl.textContent = `GPS lat:${lat.toFixed(5)} lng:${lng.toFixed(5)} acc:${Math.round(accuracy)}m`;
       setButtons();
     }
 
@@ -185,7 +191,9 @@
     function loadProfile(){
       idEl.value=localStorage.getItem("emp:id")||"";
       nameEl.value=localStorage.getItem("emp:name")||"";
-      siteEl.value=localStorage.getItem("emp:site")||"Labuan Office";
+      const savedSite = localStorage.getItem("emp:site");
+      buildSiteOptions();
+      siteEl.value = savedSite && SITES[savedSite] ? savedSite : Object.keys(SITES)[0];
       setSite(siteEl.value);
     }
     function saveProfile(){
@@ -193,48 +201,51 @@
       localStorage.setItem("emp:name",nameEl.value.trim());
       localStorage.setItem("emp:site",siteEl.value);
     }
+    function buildSiteOptions(){
+      const frag = document.createDocumentFragment();
+      Object.keys(SITES).forEach(k=>{
+        const opt=document.createElement('option');
+        opt.value=k; opt.textContent=SITES[k].name||k; frag.appendChild(opt);
+      });
+      siteEl.innerHTML=""; siteEl.appendChild(frag);
+    }
 
     // ====== Device ID ======
     function getDeviceId(){
       let id=localStorage.getItem("emp:deviceId");
-      if(!id){
-        id=crypto.randomUUID?crypto.randomUUID():"dev-"+Math.random().toString(36).slice(2);
-        localStorage.setItem("emp:deviceId",id);
-      }
+      if(!id){ id=crypto.randomUUID?crypto.randomUUID():"dev-"+Math.random().toString(36).slice(2); localStorage.setItem("emp:deviceId",id); }
       return id;
     }
 
     // ====== Session handling ======
-    function readSession(){try{return JSON.parse(localStorage.getItem("sess:open")||"null");}
-      catch{return null;}}
-    function writeSession(s){localStorage.setItem("sess:open",JSON.stringify(s));}
-    function clearSession(){localStorage.removeItem("sess:open");}
+    const dayKey = ms=>{const d=new Date(ms);return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`};
+    function readSession(){ try{return JSON.parse(localStorage.getItem("sess:open")||"null");}catch{return null;} }
+    function writeSession(s){ localStorage.setItem("sess:open",JSON.stringify(s)); }
+    function clearSession(){ localStorage.removeItem("sess:open"); }
     function loadSession(){
       const s=readSession();
-      if(!s){sessWrap.style.display="none";outBtn.disabled=true;return;}
+      // auto-clear if day rolled over
+      if (s && s.day && s.day !== dayKey(Date.now())) { clearSession(); return loadSession(); }
+      if(!s){ sessWrap.style.display="none"; outBtn.disabled=true; return; }
       sessWrap.style.display="";
       sessSite.textContent=s.siteName||SITE.name;
       sessIn.textContent=pretty(s.clockIn);
-      if(s.clockOut){sessOutRow.style.display="";sessOut.textContent=pretty(s.clockOut);}
-      else{sessOutRow.style.display="none";}
-      if(s.durationMin!=null){
-        sessDurRow.style.display="";
-        const h=s.durationMin/60;sessDur.textContent=`${h.toFixed(2)} h (${Math.round(s.durationMin)} min)`;
-      }else{sessDurRow.style.display="none";}
+      if(s.clockOut){sessOutRow.style.display="";sessOut.textContent=pretty(s.clockOut);} else {sessOutRow.style.display="none";}
+      if(s.durationMin!=null){ sessDurRow.style.display=""; const h=s.durationMin/60; sessDur.textContent=`${h.toFixed(2)} h (${Math.round(s.durationMin)} min)`; } else { sessDurRow.style.display="none"; }
       setButtons();
     }
-    function openSession(siteName){writeSession({siteName,clockIn:Date.now()});loadSession();}
-    function closeSession(durationMin){const s=readSession();if(!s)return;s.clockOut=Date.now();
-      if(durationMin!=null)s.durationMin=durationMin;writeSession(s);loadSession();}
+    function openSession(siteName){ writeSession({siteName,clockIn:Date.now(),day:dayKey(Date.now())}); loadSession(); }
+    function closeSession(durationMin){ const s=readSession(); if(!s) return; s.clockOut=Date.now(); if(durationMin!=null) s.durationMin=durationMin; writeSession(s); loadSession(); }
 
     // ====== Buttons ======
     function setButtons(){
-      const hasId=!!idEl.value.trim(),hasName=!!nameEl.value.trim();
-      const s=readSession(),open=!!(s&&!s.clockOut);
-      const onSiteOK=within&&current;
-      inBtn.disabled=!(onSiteOK&&hasId&&hasName);
-      const onSiteGate=REQUIRE_ONSITE_TO_CHECKOUT?onSiteOK:(!!current);
-      outBtn.disabled=!(open&&onSiteGate&&hasId&&hasName);
+      const hasId=!!idEl.value.trim(), hasName=!!nameEl.value.trim();
+      const s=readSession(), open=!!(s && !s.clockOut);
+      const canIn = !!current && withinFor('checkin') && hasId && hasName;
+      let canOut = !!current && hasId && hasName && open;
+      if(REQUIRE_ONSITE_TO_CHECKOUT){ canOut = canOut && withinFor('checkout'); }
+      inBtn.disabled = !canIn;
+      outBtn.disabled = !canOut;
     }
 
     // ====== Friendly errors ======
@@ -257,9 +268,8 @@
 
     // ====== Network helpers ======
     async function ping(){
-      try{
-        await fetch(ENDPOINT + (ENDPOINT.includes("?")?"&":"?") + "health=" + Date.now(), { method:"GET" });
-      }catch{err("Cannot reach server.");}
+      try{ await fetch(ENDPOINT + (ENDPOINT.includes("?")?"&":"?") + "health=" + Date.now(), { method:"GET" }); }
+      catch{ err("Cannot reach server."); }
     }
 
     async function send(action){
@@ -268,49 +278,39 @@
       const name=nameEl.value.trim();
       if(!employeeId||!name){err("Enter ID and name.");return;}
       if(!current){err("No location yet.");return;}
-      if(action==="checkin"&&!within){err(`You must be on-site (acc ≤ ${ACCURACY_MAX} m) to check in.`);return;}
-      if(action==="checkout"&&REQUIRE_ONSITE_TO_CHECKOUT&&!within){err(`You must be on-site to check out.`);return;}
+
+      if(action==="checkin" && !withinFor('checkin')){
+        err(`You must be on-site (acc ≤ ${ACCURACY_MAX_IN} m) to check in.`); return;
+      }
+      if(action==="checkout" && REQUIRE_ONSITE_TO_CHECKOUT && !withinFor('checkout')){
+        err(`You must be on-site to check out.`); return;
+      }
       saveProfile();
 
+      // guard: disable during network to prevent double submits
+      inBtn.disabled = true; outBtn.disabled = true; enableBtn.disabled = true;
+
       const payload={
-        secret:SECRET,action,
-        employeeId,name,siteName:siteEl.value,
-        lat:current.lat,lng:current.lng,accuracy:current.accuracy,
-        radiusM:SITE.radiusM,userAgent:navigator.userAgent,
-        deviceId:getDeviceId()
+        secret:SECRET, action,
+        employeeId, name, siteName:siteEl.value,
+        lat:current.lat, lng:current.lng, accuracy:current.accuracy,
+        // radiusM intentionally NOT sent; server must own geofence values
+        userAgent:navigator.userAgent, deviceId:getDeviceId()
       };
 
       try{
-        const url = ENDPOINT + (ENDPOINT.includes("?") ? "&" : "?") + "t=" + Date.now(); // cache-bust safely
-        const r = await fetch(url, {
-          method: "POST",
-          mode: "cors",
-          redirect: "follow",
-          headers: { "Content-Type": "text/plain;charset=utf-8" }, // simple request (no preflight)
-          body: JSON.stringify(payload),
-        });
+        const url = ENDPOINT + (ENDPOINT.includes("?") ? "&" : "?") + "t=" + Date.now();
+        const r = await fetch(url, { method: "POST", mode: "cors", redirect: "follow", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
 
-        const text = await r.text(); // robust on mobile
-        let data;
-        try { data = JSON.parse(text); }
-        catch { data = { ok:false, error: text.slice(0,120) || "non_json_response" }; }
+        const text = await r.text();
+        let data; try { data = JSON.parse(text); } catch { data = { ok:false, error: text.slice(0,120) || "non_json_response" }; }
 
         if (data.ok) {
-          if (action === "checkin") {
-            openSession(siteEl.value);
-            ok(`Checked in ✅ ${new Date().toLocaleString()}`);
-          } else {
-            closeSession(data.durationMin);
-            ok(`Checked out ✅ ${new Date().toLocaleString()} (${data.durationMin || 0} min)`);
-          }
-        } else {
-          err("Action failed: " + explain(data.error));
-        }
-      } catch(e){
-        err("Network error: " + e.message);
-      } finally {
-        setButtons();
-      }
+          if (action === "checkin") { openSession(siteEl.value); ok(`Checked in ✅ ${pretty(Date.now())}`); }
+          else { closeSession(data.durationMin); ok(`Checked out ✅ ${pretty(Date.now())} (${data.durationMin || 0} min)`); }
+        } else { err("Action failed: " + explain(data.error)); }
+      } catch(e){ err("Network error: " + e.message); }
+      finally { setButtons(); enableBtn.disabled=false; }
     }
 
     inBtn.addEventListener("click",()=>send("checkin"));
@@ -321,8 +321,8 @@
 
     // ====== Init ======
     (function init(){
-      loadProfile();loadSession();setButtons();ping();
-      startGeolocation(); // improved geolocation flow
+      loadProfile(); loadSession(); setButtons(); ping();
+      startGeolocation();
     })();
   </script>
 </body>
