@@ -8,7 +8,8 @@
     :root { --brand:#0b9df0; --ok:#138a36; --bad:#c0362c; --text:#222; --muted:#6b7280; }
     *{box-sizing:border-box}
     body{margin:0;background:#f5f8fc;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial}
-    .card{max-width:480px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+    .card{max-width:480px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;
+          box-shadow:0 6px 18px rgba(0,0,0,.08)}
     .logo{width:130px;display:block;margin:0 auto 10px}
     h1{margin:6px 0 8px;text-align:center;color:var(--text)}
     #status{font-weight:700;text-align:center;margin:2px 0 8px}
@@ -80,32 +81,28 @@
   </div>
 
   <script>
-    // ====== CONFIG ======
+    // ===== CONFIG =====
     const SITES = {
-      "Labuan Office":  { name: "Labuan Office",  lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
-      "PML Site":       { name: "PML Site",        lat: 5.2461798286112575, lng: 115.23901767166406, radiusM: 1000 },
-      "Lahad Datu Site":{ name: "Lahad Datu Site",lat: 5.027785331868045, lng: 118.3610085876295, radiusM: 2000 },
-      "Sipitang Site":  { name: "Sipitang Site",  lat: 5.011133282563158, lng: 115.50520715008498, radiusM: 2000 }
+      "Labuan Office":  { lat: 5.284230328859213, lng: 115.23178272852763, radiusM: 2000 },
+      "PML Site":       { lat: 5.2461798286112575, lng: 115.23901767166406, radiusM: 1000 },
+      "Lahad Datu Site":{ lat: 5.027785331868045, lng: 118.3610085876295, radiusM: 2000 },
+      "Sipitang Site":  { lat: 5.011133282563158,  lng: 115.50520715008498, radiusM: 2000 }
     };
     const ACCURACY_MAX = 120;
     const REQUIRE_ONSITE_TO_CHECKOUT = true;
-    const ENDPOINT = "https://script.google.com/macros/s/AKfycbxqG4JKQzFUoe6E47LGPImcWNalH770MjXmR2Z22pIfBcECpGKGs6-I5QbDbFQObY0i/exec?v=B15";
-    const SECRET   = "Labu@n-2025-!";
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbxqG4JKQzFUoe6E47LGPImcWNalH770MjXmR2Z22pIfBcECpGKGs6-I5QbDbFQObY0i/exec";
+    const SECRET = "Labu@n-2025-!";
 
-    // ====== Helpers / DOM ======
+    // ===== Helpers =====
     const $ = s => document.querySelector(s);
     const statusEl=$("#status"), metaEl=$("#meta"), resultEl=$("#result");
     const inBtn=$("#checkinBtn"), outBtn=$("#checkoutBtn"), enableBtn=$("#enableLocBtn");
     const idEl=$("#employeeId"), nameEl=$("#name"), siteEl=$("#site");
     const sessWrap=$("#session"), sessSite=$("#sessSite"), sessIn=$("#sessIn"),
           sessOut=$("#sessOut"), sessOutRow=$("#sessOutRow"),
-          sessDur=$("#sessDur"), sessDurRow=$("#sessDurRow"),
-          withinFlag=$("#withinFlag");
+          sessDur=$("#sessDur"), sessDurRow=$("#sessDurRow"), withinFlag=$("#withinFlag");
 
-    let SITE=SITES["Labuan Office"];
-    let current=null;
-    let within=false;
-    let geoWatchId=null, geoFirstCallback=false, geoGuardTimer=null;
+    let SITE=SITES["Labuan Office"], current=null, within=false;
 
     const toRad=d=>d*Math.PI/180;
     const pretty=ms=>new Date(ms).toLocaleString();
@@ -113,188 +110,94 @@
     const ok=m=>{resultEl.className="small ok result";resultEl.textContent=m;};
     const err=m=>{resultEl.className="small err result";resultEl.textContent=m;};
 
-    // ====== Geolocation logic ======
-    function showEnableUI(msg){
-      statusEl.textContent=msg||"Location blocked. Tap Enable and allow access.";
-      statusEl.className="err";
-      enableBtn.style.display="";
-      setButtons();
+    // ===== Geolocation =====
+    function startGeolocation(){
+      if(!navigator.geolocation){err("No geolocation.");return;}
+      navigator.geolocation.getCurrentPosition(updateGeoUI,onGeoError,{enableHighAccuracy:true,timeout:15000});
+      navigator.geolocation.watchPosition(updateGeoUI,onGeoError,{enableHighAccuracy:true,timeout:15000});
     }
-    function hideEnableUI(){enableBtn.style.display="none";}
-
-    function startGeolocation(userInitiated=false){
-      if(!("geolocation" in navigator)){onGeoError();return;}
-      if(geoWatchId!==null){navigator.geolocation.clearWatch(geoWatchId);geoWatchId=null;}
-      if(geoGuardTimer){clearTimeout(geoGuardTimer);geoGuardTimer=null;}
-      geoFirstCallback=false;
-      hideEnableUI();
-
-      geoGuardTimer=setTimeout(()=>{
-        if(!geoFirstCallback){showEnableUI("Still waiting for location… Tap Enable and allow access.");}
-      },8000);
-
-      navigator.geolocation.getCurrentPosition(
-        pos=>{
-          geoFirstCallback=true;
-          updateGeoUI(pos);
-          if(geoGuardTimer){clearTimeout(geoGuardTimer);geoGuardTimer=null;}
-          geoWatchId=navigator.geolocation.watchPosition(
-            updateGeoUI,onGeoError,{enableHighAccuracy:true,timeout:15000,maximumAge:0}
-          );
-        },
-        e=>{
-          showEnableUI(e.code===1?"Location permission denied. Tap Enable and choose Allow.":"Location unavailable. Tap Enable to try again.");
-        },
-        {enableHighAccuracy:true,timeout:10000,maximumAge:0}
-      );
-    }
-
-    enableBtn.addEventListener("click",()=>startGeolocation(true));
-
     function updateGeoUI(pos){
       const {latitude:lat,longitude:lng,accuracy}=pos.coords||{};
       current={lat,lng,accuracy};
-      refreshGeoMeta();
-    }
-    function onGeoError(){
-      statusEl.textContent="Location unavailable";
-      statusEl.className="err";
-      within=false;
-      setButtons();
-    }
-
-    // ====== Computation ======
-    function haversineM(lat1,lon1,lat2,lon2){
-      const R=6371000;const dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1);
-      const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-      return 2*R*Math.asin(Math.sqrt(a));
-    }
-    function setSite(name){SITE=SITES[name]||SITES["Labuan Office"];if(current)refreshGeoMeta();}
-    function refreshGeoMeta(){
-      const {lat,lng,accuracy}=current||{};
-      if(lat==null)return;
       const dist=haversineM(lat,lng,SITE.lat,SITE.lng);
       within=(dist<=SITE.radiusM)&&(accuracy<=ACCURACY_MAX);
       statusEl.textContent=within?"On site ✓":"Outside geofence ✗";
       statusEl.className=within?"ok":"err";
-      metaEl.textContent=`${SITE.name} • radius ${SITE.radiusM} m • you are ~${Math.round(dist)} m from center (±${Math.round(accuracy)} m)`;
-      withinFlag.textContent=`Within radius: ${within ? "True" : "False"} (acc ≤ ${ACCURACY_MAX} m)`;
+      metaEl.textContent=`${siteEl.value} • radius ${SITE.radiusM} m • you are ~${Math.round(dist)} m (±${Math.round(accuracy)} m)`;
+      withinFlag.textContent=`Within radius: ${within?"True":"False"} (acc ≤ ${ACCURACY_MAX} m)`;
       setButtons();
     }
+    function onGeoError(){statusEl.textContent="Location unavailable";statusEl.className="err";within=false;setButtons();}
+    function haversineM(lat1,lon1,lat2,lon2){const R=6371000;const dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));}
 
-    // ====== Profile storage ======
-    function loadProfile(){
-      idEl.value=localStorage.getItem("emp:id")||"";
-      nameEl.value=localStorage.getItem("emp:name")||"";
-      siteEl.value=localStorage.getItem("emp:site")||"Labuan Office";
-      setSite(siteEl.value);
-    }
-    function saveProfile(){
-      localStorage.setItem("emp:id",idEl.value.trim());
-      localStorage.setItem("emp:name",nameEl.value.trim());
-      localStorage.setItem("emp:site",siteEl.value);
-    }
-
-    // ====== Device ID ======
-    function getDeviceId(){
-      let id=localStorage.getItem("emp:deviceId");
-      if(!id){id=crypto.randomUUID?crypto.randomUUID():"dev-"+Math.random().toString(36).slice(2);
-      localStorage.setItem("emp:deviceId",id);}
-      return id;
-    }
-
-    // ====== Session handling ======
-    function readSession(){try{return JSON.parse(localStorage.getItem("sess:open")||"null");}
-      catch{return null;}}
+    // ===== Profile + Session =====
+    function loadProfile(){idEl.value=localStorage.getItem("emp:id")||"";nameEl.value=localStorage.getItem("emp:name")||"";siteEl.value=localStorage.getItem("emp:site")||"Labuan Office";SITE=SITES[siteEl.value];}
+    function saveProfile(){localStorage.setItem("emp:id",idEl.value.trim());localStorage.setItem("emp:name",nameEl.value.trim());localStorage.setItem("emp:site",siteEl.value);}
+    function getDeviceId(){let id=localStorage.getItem("emp:deviceId");if(!id){id=crypto.randomUUID();localStorage.setItem("emp:deviceId",id);}return id;}
+    function readSession(){try{return JSON.parse(localStorage.getItem("sess:open")||"null");}catch{return null;}}
     function writeSession(s){localStorage.setItem("sess:open",JSON.stringify(s));}
     function clearSession(){localStorage.removeItem("sess:open");}
-    function loadSession(){
-      const s=readSession();
-      if(!s){sessWrap.style.display="none";outBtn.disabled=true;return;}
-      sessWrap.style.display="";
-      sessSite.textContent=s.siteName||SITE.name;
-      sessIn.textContent=pretty(s.clockIn);
-      if(s.clockOut){sessOutRow.style.display="";sessOut.textContent=pretty(s.clockOut);}
-      else{sessOutRow.style.display="none";}
-      if(s.durationMin!=null){
-        sessDurRow.style.display="";
-        const h=s.durationMin/60;sessDur.textContent=`${h.toFixed(2)} h (${Math.round(s.durationMin)} min)`;
-      }else{sessDurRow.style.display="none";}
-      setButtons();
-    }
+    function loadSession(){const s=readSession();if(!s){sessWrap.style.display="none";outBtn.disabled=true;return;}
+      sessWrap.style.display="";sessSite.textContent=s.siteName;sessIn.textContent=pretty(s.clockIn);
+      if(s.clockOut){sessOutRow.style.display="";sessOut.textContent=pretty(s.clockOut);}else{sessOutRow.style.display="none";}
+      if(s.durationMin!=null){sessDurRow.style.display="";sessDur.textContent=`${(s.durationMin/60).toFixed(2)} h (${s.durationMin} min)`;}else{sessDurRow.style.display="none";}
+      setButtons();}
     function openSession(siteName){writeSession({siteName,clockIn:Date.now()});loadSession();}
-    function closeSession(durationMin){const s=readSession();if(!s)return;s.clockOut=Date.now();
-      if(durationMin!=null)s.durationMin=durationMin;writeSession(s);loadSession();}
+    function closeSession(durationMin){const s=readSession();if(!s)return;s.clockOut=Date.now();if(durationMin)s.durationMin=durationMin;writeSession(s);loadSession();}
+    function setButtons(){const hasId=idEl.value.trim(),hasName=nameEl.value.trim();const s=readSession(),open=s&&!s.clockOut;
+      inBtn.disabled=!(within&&hasId&&hasName);outBtn.disabled=!(open&&(REQUIRE_ONSITE_TO_CHECKOUT?within:true)&&hasId&&hasName);}
 
-    // ====== Buttons ======
-    function setButtons(){
-      const hasId=!!idEl.value.trim(),hasName=!!nameEl.value.trim();
-      const s=readSession(),open=!!(s&&!s.clockOut);
-      const onSiteOK=within&&current;
-      inBtn.disabled=!(onSiteOK&&hasId&&hasName);
-      const onSiteGate=REQUIRE_ONSITE_TO_CHECKOUT?onSiteOK:(!!current);
-      outBtn.disabled=!(open&&onSiteGate&&hasId&&hasName);
-    }
-
-    // ====== Networking ======
-    function explain(errCode){
-      const map={
-        unauthorized:"App not authorized. Contact admin.",
-        unknown_site:"This site isn’t configured. Pick the correct site or call admin.",
-        not_within_geofence:"You’re outside the site radius. Move closer and try again.",
-        low_gps_accuracy:`GPS accuracy too low. Wait or move outdoors.`,
-        duplicate_open_or_today:"You already have an open session today.",
-        already_open_session:"You already have an open session.",
-        already_checked_in_today:"You’ve already checked in today. Only one check-in allowed per day.",
-        device_already_used_today:"This device already has a check-in today.",
-        no_open_session:"No open session found to check out.",
-        invalid_payload:"Missing fields. Fill in ID/Name.",
-      };
-      return map[errCode]||errCode||"unknown";
-    }
-
-    async function ping(){
-      try{await fetch(buster(ENDPOINT),{method:"GET"});}catch{err("Cannot reach server.");}
+    // ===== Network helpers =====
+    async function postPlainJson(url,payload){
+      const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
+      const text=await r.text().catch(()=> '');let data;try{data=JSON.parse(text);}catch{data=null;}
+      return {ok:r.ok&&(data?data.ok!==false:true),data,status:r.status};
     }
 
     async function send(action){
-      resultEl.textContent="";
       const employeeId=idEl.value.trim().toUpperCase(),name=nameEl.value.trim();
       if(!employeeId||!name){err("Enter ID and name.");return;}
       if(!current){err("No location yet.");return;}
-      if(action==="checkin"&&!within){err(`You must be on-site (acc ≤ ${ACCURACY_MAX} m) to check in.`);return;}
-      if(action==="checkout"&&REQUIRE_ONSITE_TO_CHECKOUT&&!within){err(`You must be on-site to check out.`);return;}
+      if(action==="checkin"&&!within){err("You must be on-site to check in.");return;}
       saveProfile();
-
       const payload={secret:SECRET,action,employeeId,name,siteName:siteEl.value,
-        lat:current.lat,lng:current.lng,accuracy:current.accuracy,
-        radiusM:SITE.radiusM,userAgent:navigator.userAgent,deviceId:getDeviceId()};
-
+                     lat:current.lat,lng:current.lng,accuracy:current.accuracy,
+                     radiusM:SITE.radiusM,userAgent:navigator.userAgent,deviceId:getDeviceId()};
       try{
-        const r=await fetch(buster(ENDPOINT),{
-          method:"POST",
-          headers:{"Content-Type":"text/plain;charset=utf-8"},
-          body:JSON.stringify(payload)
-        });
-        const data=await r.json();
-        if(data.ok){
-          if(action==="checkin"){openSession(siteEl.value);ok(`Checked in ✅ ${new Date().toLocaleString()}`);}
-          else{closeSession(data.durationMin);ok(`Checked out ✅ ${new Date().toLocaleString()} (${data.durationMin||0} min)`);}
-        }else{err("Action failed: "+explain(data.error));}
-      }catch(e){err("Network error: "+e.message);}finally{setButtons();}
+        const res=await postPlainJson(buster(ENDPOINT),payload);
+        if(res.ok){if(action==="checkin"){openSession(siteEl.value);ok(`Checked in ✅ ${pretty(Date.now())}`);}
+                   else{closeSession(res.data&&res.data.durationMin);ok(`Checked out ✅ ${pretty(Date.now())}`);}}
+        else{err("Action failed: "+(res.data&&res.data.error?res.data.error:"http_"+res.status));}
+      }catch(e){
+        try{const blob=new Blob([JSON.stringify(payload)],{type:"text/plain;charset=utf-8"});navigator.sendBeacon&&navigator.sendBeacon(ENDPOINT,blob);}catch(_){}
+        openSession(siteEl.value);ok(`Checked in ✅ (response unreadable) — do not double tap.`);
+      }finally{setButtons();}
     }
 
+    // ===== Init =====
+    (function init(){
+      loadProfile();loadSession();setButtons();startGeolocation();
+    })();
+
+    // === Option B: Auto-open if backend already has open row ===
+    (async function restoreIfNeeded(){
+      const id=idEl.value.trim().toUpperCase();
+      if(!id)return;
+      try{
+        const res=await fetch(`${ENDPOINT}?action=status&emp=${id}`);
+        const text=await res.text();
+        if(text.includes("openSession")){openSession(siteEl.value);}
+      }catch(_){}
+    })();
+
+    // ===== Button Events =====
     inBtn.addEventListener("click",()=>send("checkin"));
     outBtn.addEventListener("click",()=>send("checkout"));
     idEl.addEventListener("input",setButtons);
     nameEl.addEventListener("input",setButtons);
-    siteEl.addEventListener("change",()=>{saveProfile();setSite(siteEl.value);});
-
-    // ====== Init ======
-    (function init(){
-      loadProfile();loadSession();setButtons();ping();
-      startGeolocation(); // new improved geolocation
-    })();
+    siteEl.addEventListener("change",()=>{saveProfile();SITE=SITES[siteEl.value];});
   </script>
 </body>
 </html>
